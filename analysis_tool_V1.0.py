@@ -1,8 +1,9 @@
-# universal_analysis_platform_v4_final.py
+# universal_analysis_platform_v3_4_final.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
+import re # 匯入正規表示式工具庫
 
 # --- 子模組：PTAT Log 解析器 ---
 def parse_ptat(file_content):
@@ -29,15 +30,11 @@ def parse_ptat(file_content):
     except Exception as e:
         return None, f"解析PTAT Log時出錯: {e}"
 
-# --- 子模組：YOKOGAWA Log 解析器 (最終修正版) ---
+# --- 子模組：YOKOGAWA Log 解析器 ---
 def parse_yokogawa(file_content, is_excel=False):
     try:
-        # 關鍵修正：將 read_func 分開呼叫，以移除不相容的參數
-        if is_excel:
-            df = pd.read_excel(file_content, header=28)
-        else:
-            df = pd.read_csv(file_content, header=28, thousands=',', low_memory=False)
-            
+        read_func = pd.read_excel if is_excel else pd.read_csv
+        df = read_func(file_content, header=28, thousands=',')
         df.columns = df.columns.str.strip()
         time_column = 'RT'
         if time_column not in df.columns: return None, f"YOKOGAWA Log中找不到 '{time_column}' 欄位"
@@ -54,27 +51,32 @@ def parse_yokogawa(file_content, is_excel=False):
     except Exception as e:
         return None, f"解析YOKOGAWA Log時出錯: {e}"
 
-# --- 主模組：解析器調度中心 ---
+# --- 主模組：解析器調度中心 (模式匹配版) ---
 def parse_dispatcher(uploaded_file):
     filename = uploaded_file.name
     file_content = io.BytesIO(uploaded_file.getvalue())
     is_excel = '.xlsx' in filename.lower()
     
     try:
-        if is_excel:
-            df_sniff_ch = pd.read_excel(file_content, header=None, skiprows=27, nrows=1)
-            file_content.seek(0)
-            if 'CH001' in str(df_sniff_ch.iloc[0, 0]):
-                return parse_yokogawa(file_content, is_excel=True)
-        else: # CSV
-            first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(30)])
+        read_func = pd.read_excel if is_excel else pd.read_csv
+
+        # 嘗試用YOKOGAWA最可靠的特徵來辨識
+        df_sniff_yoko = read_func(file_content, header=None, skiprows=27, nrows=1)
+        file_content.seek(0)
+        first_cell_content = str(df_sniff_yoko.iloc[0, 0])
+        # 關鍵修正：使用正規表示式來匹配 CHXXX 格式
+        if re.match(r'CH\d{3}', first_cell_content):
+            return parse_yokogawa(file_content, is_excel)
+
+        # 如果不是YOKOGAWA，再嘗試用PTAT的特徵來辨識 (僅限CSV)
+        if not is_excel:
+            first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(5)])
             file_content.seek(0)
             if 'MSR Package Temperature' in first_lines_text:
                 return parse_ptat(file_content)
-            elif 'CH001' in first_lines_text:
-                return parse_yokogawa(file_content, is_excel=False)
-    except Exception:
-        pass
+
+    except Exception as e:
+        return None, f"檔案嗅探失敗: {e}"
             
     return None, "未知的Log檔案格式"
 
@@ -110,6 +112,8 @@ def generate_flexible_chart(df, left_col, right_col, x_limits):
 st.set_page_config(layout="wide"); st.title("通用數據分析平台")
 st.sidebar.header("控制面板")
 uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['csv', 'xlsx'], accept_multiple_files=True)
+st.sidebar.info("注意：若上傳YOKOGAWA日誌，請確保Tag欄位已填寫對應的測點代號。")
+
 
 if uploaded_files:
     all_dfs = []; log_types_detected = []
@@ -131,7 +135,7 @@ if uploaded_files:
         numeric_columns = master_df_resampled.columns.tolist()
         if numeric_columns:
             st.sidebar.header("圖表設定")
-            default_left_list = [c for c in numeric_columns if 'Temp' in c]
+            default_left_list = [c for c in numeric_columns if 'Temp' in c or 'T_' in c]
             default_left = default_left_list[0] if default_left_list else numeric_columns[0]
             left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, index=numeric_columns.index(default_left) if default_left in numeric_columns else 0)
             
