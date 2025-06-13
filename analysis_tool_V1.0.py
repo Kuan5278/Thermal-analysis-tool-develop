@@ -35,175 +35,59 @@ def display_safe_markdown(content):
         st.text(content)  # 備用顯示方式
 
 # --- 原有的解析函數 (保持不變) ---
+# 第197行修復 - 檢查這些常見問題
+
+# 🔍 檢查第197行附近的代碼是否是這樣：
+
+# ❌ 可能的錯誤情況1：
 def parse_ptat(file_content):
-    """
-    修復版PTAT Log解析器 v8.5
-    專門處理格式: Version,Date,Time,Relative Time(mS),Diff time(mS),CPUID,Stepping,Graphics ID...
-    """
     try:
-        # 重置文件指針
+        # 一些代碼
+        pass
+    except Exception as e:
+        return None, f"錯誤: {e}"
+        else:  # ← 第197行，縮進錯誤！
+            return df, "成功"
+
+# ✅ 正確的應該是：
+def parse_ptat(file_content):
+    try:
+        # 一些代碼
+        pass
+    except Exception as e:
+        return None, f"錯誤: {e}"
+    else:  # ← 正確縮進
+        return df, "成功"
+
+# ❌ 可能的錯誤情況2：
+if condition:
+    do_something()
+else:  # ← 如果這是第197行，檢查上面的if縮進
+    do_other()
+
+# ✅ 修復方案 - 完整的正確parse_ptat函數：
+def parse_ptat(file_content):
+    try:
         file_content.seek(0)
-        
-        # 使用更寬容的參數讀取CSV
-        df = pd.read_csv(
-            file_content, 
-            header=0,  # 第一行是標題
-            thousands=',', 
-            low_memory=False,
-            encoding='utf-8',  # 明確指定編碼
-            sep=',',  # 明確指定分隔符
-            on_bad_lines='skip',  # 跳過格式錯誤的行
-            dtype=str  # 先全部讀取為字符串，後續再轉換
-        )
-        
-        # 清理欄位名稱
+        df = pd.read_csv(file_content, header=0, thousands=',', low_memory=False)
         df.columns = df.columns.str.strip()
-        
-        # 檢查是否有Time欄位
         time_column = 'Time'
-        if time_column not in df.columns: 
+        if time_column not in df.columns:
             return None, "PTAT Log中找不到 'Time' 欄位"
-        
-        # 處理時間數據
         time_series = df[time_column].astype(str).str.strip()
-        
-        # 處理時間格式 - 支援多種格式
-        try:
-            # 方法1: 嘗試標準時間格式 HH:MM:SS.fff
-            time_series_cleaned = time_series.str.replace(r':(\d{3})$', r'.\1', regex=True)
-            datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S.%f', errors='coerce')
-            
-            # 方法2: 如果上面失敗，嘗試 HH:MM:SS
-            if datetime_series.isna().all():
-                datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S', errors='coerce')
-            
-            # 方法3: 如果還是失敗，嘗試自動推斷
-            if datetime_series.isna().all():
-                datetime_series = pd.to_datetime(time_series, errors='coerce', infer_datetime_format=True)
-            
-            # 方法4: 最後嘗試，如果是數字格式（秒數）
-            if datetime_series.isna().all():
-                try:
-                    numeric_time = pd.to_numeric(time_series, errors='coerce')
-                    if not numeric_time.isna().all():
-                        # 假設是秒數，轉換為timedelta
-                        datetime_series = pd.to_timedelta(numeric_time, unit='s')
-                except:
-                    pass
-                    
-        except Exception as e:
-            return None, f"時間格式解析失敗: {str(e)}"
-        
-        # 檢查時間解析結果
+        time_series_cleaned = time_series.str.replace(r':(\d{3})$', r'.\1', regex=True)
+        datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S.%f', errors='coerce')
         valid_times_mask = datetime_series.notna()
-        if valid_times_mask.sum() == 0:
-            return None, "PTAT Log時間格式無法解析 - 所有時間數據都無效"
-        
-        # 過濾有效數據
         df = df[valid_times_mask].copy()
-        if df.empty: 
-            return None, "過濾後沒有有效的時間數據"
-        
-        # 計算相對時間
+        if df.empty:
+            return None, "PTAT Log時間格式無法解析"
         valid_datetimes = datetime_series[valid_times_mask]
-        
-        # 如果是timestamp格式，轉換為相對時間
-        if hasattr(valid_datetimes.iloc[0], 'to_pydatetime'):
-            df['time_index'] = valid_datetimes - valid_datetimes.iloc[0]
-        else:
-            # 如果已經是timedelta格式
-            df['time_index'] = valid_datetimes
-        
-        # 數據清理：轉換數值欄位
-        for col in df.columns:
-            if col not in ['time_index', 'Version', 'Date', 'Time', 'CPU Name', 'CPU Brand String', 'Host ID']:
-                try:
-                    # 嘗試轉換為數值
-                    numeric_data = pd.to_numeric(df[col], errors='coerce')
-                    # 如果轉換成功且不是全部NaN，則使用數值版本
-                    if not numeric_data.isna().all():
-                        df[col] = numeric_data
-                except:
-                    # 轉換失敗就保持原樣
-                    pass
-        
-        # 添加PTAT前綴
+        df['time_index'] = valid_datetimes - valid_datetimes.iloc[0]
         df = df.add_prefix('PTAT: ')
         df.rename(columns={'PTAT: time_index': 'time_index'}, inplace=True)
-        
-        # 設置時間索引
-        result_df = df.set_index('time_index')
-        
-        return result_df, "PTAT Log"
-        
-    except pd.errors.EmptyDataError:
-        return None, "PTAT Log檔案為空或格式錯誤"
-    except pd.errors.ParserError as e:
-        return None, f"PTAT Log解析錯誤: {str(e)}"
-    except UnicodeDecodeError:
-        # 如果UTF-8失敗，嘗試其他編碼
-        try:
-            file_content.seek(0)
-            df = pd.read_csv(
-                file_content, 
-                header=0,
-                thousands=',', 
-                low_memory=False,
-                encoding='latin1',  # 嘗試latin1編碼
-                sep=',',
-                on_bad_lines='skip',
-                dtype=str
-            )
-            # 重複處理邏輯
-            df.columns = df.columns.str.strip()
-            time_column = 'Time'
-            if time_column not in df.columns: 
-                return None, "PTAT Log中找不到 'Time' 欄位"
-            
-            time_series = df[time_column].astype(str).str.strip()
-            time_series_cleaned = time_series.str.replace(r':(\d{3})$', r'.\1', regex=True)
-            datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S.%f', errors='coerce')
-            
-            if datetime_series.isna().all():
-                datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S', errors='coerce')
-            
-            valid_times_mask = datetime_series.notna()
-            if valid_times_mask.sum() == 0:
-                return None, "PTAT Log時間格式無法解析"
-            
-            df = df[valid_times_mask].copy()
-            valid_datetimes = datetime_series[valid_times_mask]
-            df['time_index'] = valid_datetimes - valid_datetimes.iloc[0]
-            
-            for col in df.columns:
-                if col not in ['time_index', 'Version', 'Date', 'Time', 'CPU Name', 'CPU Brand String', 'Host ID']:
-                    try:
-                        numeric_data = pd.to_numeric(df[col], errors='coerce')
-                        if not numeric_data.isna().all():
-                            df[col] = numeric_data
-                    except:
-                        pass
-            
-            df = df.add_prefix('PTAT: ')
-            df.rename(columns={'PTAT: time_index': 'time_index'}, inplace=True)
-            result_df = df.set_index('time_index')
-            
-            return result_df, "PTAT Log"
-            
-        except Exception as e:
-            return None, f"編碼錯誤無法修復: {str(e)}"
+        return df.set_index('time_index'), "PTAT Log"
     except Exception as e:
-        return None, f"解析PTAT Log時出現未知錯誤: {str(e)}"
-                else:
-                    pass
-                    
-            except Exception as e:
-                pass
-        
-    except Exception as e:
-        pass
-        
-    return None, f"未知的Log檔案格式: {filename}"
+        return None, f"解析PTAT Log時出錯: {e}"
 
 def calculate_temp_stats(df, x_limits=None):
     """計算溫度統計數據"""
