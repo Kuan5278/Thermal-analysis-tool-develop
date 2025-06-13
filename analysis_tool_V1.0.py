@@ -26,7 +26,7 @@ def parse_ptat(file_content):
     except Exception as e:
         return None, f"解析PTAT Log時出錯: {e}"
 
-# --- 子模組：YOKOGAWA Log 解析器 (專用修正版) ---
+# --- 子模組：YOKOGAWA Log 解析器 (智能欄位命名版) ---
 def parse_yokogawa(file_content, is_excel=False):
     try:
         read_func = pd.read_excel if is_excel else pd.read_csv
@@ -80,6 +80,48 @@ def parse_yokogawa(file_content, is_excel=False):
         
         time_column = found_time_col
         st.info(f"使用時間欄位: {time_column}, 表頭行: {successful_header}")
+        
+        # 🔥 新增：智能欄位重命名功能
+        if is_excel and successful_header == 29:  # 第30行作為表頭
+            try:
+                # 讀取第28行(CH編號)和第29行(Tag標籤)
+                file_content.seek(0)
+                ch_row = pd.read_excel(file_content, header=None, skiprows=27, nrows=1).iloc[0]  # 第28行
+                file_content.seek(0)
+                tag_row = pd.read_excel(file_content, header=None, skiprows=28, nrows=1).iloc[0]  # 第29行
+                
+                # 建立新的欄位名稱映射
+                new_column_names = {}
+                for i, original_col in enumerate(df.columns):
+                    if i < len(ch_row) and i < len(tag_row):
+                        ch_name = str(ch_row.iloc[i]).strip() if pd.notna(ch_row.iloc[i]) else ""
+                        tag_name = str(tag_row.iloc[i]).strip() if pd.notna(tag_row.iloc[i]) else ""
+                        
+                        # 智能命名邏輯：優先使用Tag，為空則使用CH編號
+                        if tag_name and tag_name != 'nan' and tag_name != 'Tag':
+                            new_column_names[original_col] = tag_name
+                        elif ch_name and ch_name != 'nan' and ch_name.startswith('CH'):
+                            new_column_names[original_col] = ch_name
+                        else:
+                            new_column_names[original_col] = original_col  # 保持原名
+                    else:
+                        new_column_names[original_col] = original_col
+                
+                # 套用新的欄位名稱
+                df.rename(columns=new_column_names, inplace=True)
+                
+                # 顯示重命名結果
+                renamed_channels = [(k, v) for k, v in new_column_names.items() if k != v and v not in ['Date', 'Time', 'sec']]
+                if renamed_channels:
+                    st.success(f"智能重命名完成！重命名了 {len(renamed_channels)} 個溫度通道")
+                    st.write("重命名對照表:")
+                    for old_name, new_name in renamed_channels[:10]:  # 只顯示前10個
+                        st.write(f"  {old_name} → {new_name}")
+                    if len(renamed_channels) > 10:
+                        st.write(f"  ... 及其他 {len(renamed_channels) - 10} 個通道")
+                
+            except Exception as e:
+                st.warning(f"智能重命名失敗，將使用原始欄位名稱: {e}")
         
         # 顯示前幾筆時間數據供debug
         st.write(f"時間欄位前5筆數據: {df[time_column].head().tolist()}")
@@ -274,10 +316,10 @@ def generate_flexible_chart(df, left_col, right_col, x_limits):
 
 # --- Streamlit 網頁應用程式介面 ---
 st.set_page_config(layout="wide")
-st.title("通用數據分析平台 - YOKOGAWA 時間範圍調整版")
+st.title("通用數據分析平台 - YOKOGAWA 智能命名版")
 st.sidebar.header("控制面板")
 uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['csv', 'xlsx'], accept_multiple_files=True)
-st.sidebar.info("注意：此版本為YOKOGAWA圖表加入了時間範圍調整功能。")
+st.sidebar.info("注意：此版本為YOKOGAWA加入了智能欄位命名和時間範圍調整功能。")
 
 if uploaded_files:
     # --- 關鍵修正：只在需要時才進行檔案類型預判 ---
