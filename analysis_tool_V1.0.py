@@ -7,15 +7,11 @@ import re
 from datetime import datetime
 
 # --- 版本資訊設定 ---
-VERSION = "v8.0"
+VERSION = "v1.0"
 VERSION_DATE = "2025年6月"
 VERSION_FEATURES = [
-    "🎨 全新美化界面設計",
-    "📊 優化圖表大小與顯示比例",
-    "📋 改進統計表格布局",
-    "🔧 增強YOKOGAWA Excel智能解析",
-    "⚡ 提升PTAT Log處理效能",
-    "🎯 新增Y軸範圍自定義功能"
+    "First release",
+    
 ]
 
 # --- 子模組：PTAT Log 解析器 (靜默版) ---
