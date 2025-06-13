@@ -1,4 +1,4 @@
-# universal_analysis_platform_v4_1_final.py
+# universal_analysis_platform_v5_final.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -26,25 +26,32 @@ def parse_ptat(file_content):
     except Exception as e:
         return None, f"解析PTAT Log時出錯: {e}"
 
-# --- 子模組：YOKOGAWA Log 解析器 ---
+# --- 子模組：YOKOGAWA Log 解析器 (最終修正版) ---
 def parse_yokogawa(file_content, is_excel=False):
     try:
         read_func = pd.read_excel if is_excel else pd.read_csv
         df = read_func(file_content, header=28, thousands=',')
         df.columns = df.columns.str.strip()
-        time_column = 'RT'
+        
+        # 關鍵修正：使用 'TIME' 作為時間欄位，不再使用 'RT'
+        time_column = 'TIME'
         if time_column not in df.columns: return None, f"YOKOGAWA Log中找不到 '{time_column}' 欄位"
-        df['time_index'] = pd.to_timedelta(pd.to_numeric(df[time_column], errors='coerce'), unit='s')
+        
+        # 處理 'HH:MM:SS' 或 'HH:MM:SS.ms' 格式的時間字串
+        time_series = pd.to_datetime(df[time_column].astype(str), errors='coerce').dt.time
+        df['time_index'] = pd.to_timedelta(time_series.astype(str))
+
         df.dropna(subset=['time_index'], inplace=True)
         start_time = df['time_index'].iloc[0]
         df['time_index'] = df['time_index'] - start_time
+
         df = df.add_prefix('YOKO: ')
         df.rename(columns={'YOKO: time_index': 'time_index'}, inplace=True)
         return df.set_index('time_index'), "YOKOGAWA Log"
     except Exception as e:
         return None, f"解析YOKOGAWA Log時出錯: {e}"
 
-# --- 主模組：解析器調度中心 (最終完美辨識版) ---
+# --- 主模組：解析器調度中心 ---
 def parse_dispatcher(uploaded_file):
     filename = uploaded_file.name
     file_content = io.BytesIO(uploaded_file.getvalue())
@@ -52,23 +59,17 @@ def parse_dispatcher(uploaded_file):
     
     try:
         read_func = pd.read_excel if is_excel else pd.read_csv
-
-        # --- Sniffing Logic ---
-        # 1. 嘗試用YOKOGAWA最可靠的特徵來辨識
         df_sniff_yoko = read_func(file_content, header=None, skiprows=27, nrows=1)
         file_content.seek(0)
-        # 關鍵修正：檢查第28行的任何一個儲存格是否符合 CHXXX 格式
         for cell in df_sniff_yoko.iloc[0]:
             if isinstance(cell, str) and re.match(r'CH\d{3}', cell.strip()):
                 return parse_yokogawa(file_content, is_excel)
 
-        # 2. 如果不是YOKOGAWA，再嘗試用PTAT的特徵來辨識 (僅限CSV)
         if not is_excel:
             first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(5)])
             file_content.seek(0)
             if 'MSR Package Temperature' in first_lines_text:
                 return parse_ptat(file_content)
-
     except Exception as e:
         return None, f"檔案嗅探失敗: {e}"
             
@@ -122,7 +123,7 @@ if uploaded_files:
         st.sidebar.success("檔案解析完成！")
         for name in log_types_detected: st.sidebar.markdown(f"- `{name}`")
 
-        master_df = pd.concat(all_dfs)
+        master_df = pd.concat(all_dfs); 
         master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean(numeric_only=True).interpolate(method='linear')
         
         numeric_columns = master_df_resampled.columns.tolist()
