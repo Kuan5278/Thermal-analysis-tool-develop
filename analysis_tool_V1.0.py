@@ -1,4 +1,4 @@
-# universal_analysis_platform_v4_final.py
+# universal_analysis_platform_v3_final.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -29,16 +29,13 @@ def parse_ptat(file_content):
     except Exception as e:
         return None, f"解析PTAT Log時出錯: {e}"
 
-# --- 子模組：YOKOGAWA Log 解析器 (最終修正版) ---
+# --- 子模組：YOKOGAWA Log 解析器 ---
 def parse_yokogawa(file_content, is_excel=False):
     try:
         read_func = pd.read_excel if is_excel else pd.read_csv
-        
-        # 關鍵修正：直接讀取第29行(index 28)作為標題，並從第30行開始讀取數據
-        df = read_func(file_content, header=28, thousands=',', low_memory=False)
+        df = read_func(file_content, header=28, thousands=',', low_memory=False) # 第29行是標題
         df.columns = df.columns.str.strip()
 
-        # 關鍵修正：使用 'RT' 作為時間欄位
         time_column = 'RT'
         if time_column not in df.columns: return None, f"YOKOGAWA Log中找不到 '{time_column}' 欄位"
         
@@ -54,33 +51,37 @@ def parse_yokogawa(file_content, is_excel=False):
     except Exception as e:
         return None, f"解析YOKOGAWA Log時出錯: {e}"
 
-# --- 主模組：解析器調度中心 ---
+# --- 主模組：解析器調度中心 (智慧辨識版) ---
 def parse_dispatcher(uploaded_file):
     filename = uploaded_file.name
     file_content = io.BytesIO(uploaded_file.getvalue())
     is_excel = '.xlsx' in filename.lower()
     
     try:
-        # 嗅探邏輯保持不變，它能區分檔案類型
-        if is_excel:
-            df_sniff_tag = pd.read_excel(file_content, header=28, nrows=1)
-            file_content.seek(0)
-            if 'VCC_CORE' in df_sniff_tag.columns.str.strip().tolist():
-                return parse_yokogawa(file_content, is_excel=True)
-        else: # CSV
-            first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(5)])
-            file_content.seek(0)
-            if 'MSR Package Temperature' in first_lines_text:
-                return parse_ptat(file_content)
-            else: # 假設不是PTAT就是YOKOGAWA CSV
-                 return parse_yokogawa(file_content, is_excel=False)
+        # 方法一：基於 Device Type 的YOKOGAWA檔案嗅探 (最可靠)
+        read_func = pd.read_excel if is_excel else pd.read_csv
+        # 讀取元數據區域來尋找 Device Type
+        df_sniff = read_func(file_content, header=None, skiprows=1, nrows=10) # 讀取前10行元數據
+        file_content.seek(0)
+        for index, row in df_sniff.iterrows():
+            row_str = ' '.join(row.dropna().astype(str))
+            if 'Device Type' in row_str and ('MV1000' in row_str or 'MV2000' in row_str):
+                return parse_yokogawa(file_content, is_excel)
+
+        # 方法二：如果方法一失敗，則用PTAT的特徵來嗅探
+        first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(5)])
+        file_content.seek(0)
+        if 'MSR Package Temperature' in first_lines_text:
+            return parse_ptat(file_content)
+
     except Exception:
-        pass
+        pass # 如果嗅探過程出錯，就回傳未知
             
     return None, "未知的Log檔案格式"
 
 # --- 圖表繪製函式 ---
 def generate_flexible_chart(df, left_col, right_col, x_limits):
+    # (此函式內容與前次相同，為求完整一併附上)
     if df is None or not left_col or left_col not in df.columns: return None
     if right_col and right_col != 'None' and right_col not in df.columns: return None
     
@@ -96,62 +97,4 @@ def generate_flexible_chart(df, left_col, right_col, x_limits):
 
     fig, ax1 = plt.subplots(figsize=(12, 6)); plt.title(f'{left_col} {"& " + right_col if right_col and right_col != "None" else ""}', fontsize=16)
     x_axis_seconds = df_chart.index.total_seconds()
-    color = 'tab:blue'; ax1.set_xlabel('Elapsed Time (seconds)', fontsize=12); ax1.set_ylabel(left_col, color=color, fontsize=12)
-    ax1.plot(x_axis_seconds, df_chart['left_val'], color=color); ax1.tick_params(axis='y', labelcolor=color); ax1.grid(True, linestyle='--', linewidth=0.5)
-
-    if right_col and right_col != 'None':
-        ax2 = ax1.twinx(); color = 'tab:red'
-        ax2.set_ylabel(right_col, color=color, fontsize=12); ax2.plot(x_axis_seconds, df_chart['right_val'], color=color)
-        ax2.tick_params(axis='y', labelcolor=color)
-
-    if x_limits: ax1.set_xlim(x_limits)
-    fig.tight_layout()
-    return fig
-
-# --- Streamlit 網頁應用程式介面 ---
-st.set_page_config(layout="wide"); st.title("通用數據分析平台")
-st.sidebar.header("控制面板")
-uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['csv', 'xlsx'], accept_multiple_files=True)
-
-if uploaded_files:
-    all_dfs = []; log_types_detected = []
-    with st.spinner('正在解析所有Log檔案...'):
-        for file in uploaded_files:
-            df, log_type = parse_dispatcher(file)
-            if df is not None:
-                all_dfs.append(df); log_types_detected.append(f"{file.name} (辨識為: {log_type})")
-            else:
-                st.error(f"檔案 '{file.name}' 解析失敗: {log_type}")
-
-    if all_dfs:
-        st.sidebar.success("檔案解析完成！")
-        for name in log_types_detected: st.sidebar.markdown(f"- `{name}`")
-
-        master_df = pd.concat(all_dfs); master_df_numeric = master_df.select_dtypes(include=['number'])
-        master_df_resampled = master_df_numeric.resample('1S').mean().interpolate(method='linear')
-        
-        numeric_columns = master_df_resampled.columns.tolist()
-        
-        if numeric_columns:
-            st.sidebar.header("圖表設定")
-            default_left = next((c for c in numeric_columns if 'Temp' in c), numeric_columns[0])
-            left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, index=numeric_columns.index(default_left))
-            right_y_axis_options = ['None'] + numeric_columns
-            default_right_index = 0
-            if len(numeric_columns) > 1:
-                default_right = next((c for c in numeric_columns if 'Power' in c or 'Watt' in c or 'P_' in c), 'None')
-                try: default_right_index = right_y_axis_options.index(default_right)
-                except ValueError: default_right_index = 1
-            right_y_axis = st.sidebar.selectbox("選擇右側Y軸變數 (可不選)", options=right_y_axis_options, index=default_right_index)
-
-            st.sidebar.header("X軸範圍設定 (秒)")
-            x_min_val = master_df_resampled.index.min().total_seconds(); x_max_val = master_df_resampled.index.max().total_seconds()
-            x_min, x_max = st.sidebar.slider("選擇時間範圍", x_min_val, x_max_val, (x_min_val, x_max_val))
-            
-            st.header("動態比較圖表")
-            fig = generate_flexible_chart(master_df_resampled, left_y_axis, right_y_axis, (x_min, x_max))
-            if fig: st.pyplot(fig)
-        else:
-            st.warning("所有檔案解析後，無可用的數值型數據進行繪圖。")
-else:
-    st.sidebar.info("請上傳您的 Log File(s) 開始分析。")
+    color = 'tab:blue'; ax1.set_xlabel('Elapsed Time (seconds)', fontsize=12); ax1.set_ylabel(
