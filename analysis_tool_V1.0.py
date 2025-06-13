@@ -36,174 +36,164 @@ def display_safe_markdown(content):
 
 # --- 原有的解析函數 (保持不變) ---
 def parse_ptat(file_content):
+    """
+    修復版PTAT Log解析器 v8.5
+    專門處理格式: Version,Date,Time,Relative Time(mS),Diff time(mS),CPUID,Stepping,Graphics ID...
+    """
     try:
-        df = pd.read_csv(file_content, header=0, thousands=',', low_memory=False)
+        # 重置文件指針
+        file_content.seek(0)
+        
+        # 使用更寬容的參數讀取CSV
+        df = pd.read_csv(
+            file_content, 
+            header=0,  # 第一行是標題
+            thousands=',', 
+            low_memory=False,
+            encoding='utf-8',  # 明確指定編碼
+            sep=',',  # 明確指定分隔符
+            on_bad_lines='skip',  # 跳過格式錯誤的行
+            dtype=str  # 先全部讀取為字符串，後續再轉換
+        )
+        
+        # 清理欄位名稱
         df.columns = df.columns.str.strip()
+        
+        # 檢查是否有Time欄位
         time_column = 'Time'
         if time_column not in df.columns: 
             return None, "PTAT Log中找不到 'Time' 欄位"
+        
+        # 處理時間數據
         time_series = df[time_column].astype(str).str.strip()
-        time_series_cleaned = time_series.str.replace(r':(\d{3})$', r'.\1', regex=True)
-        datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S.%f', errors='coerce')
+        
+        # 處理時間格式 - 支援多種格式
+        try:
+            # 方法1: 嘗試標準時間格式 HH:MM:SS.fff
+            time_series_cleaned = time_series.str.replace(r':(\d{3})$', r'.\1', regex=True)
+            datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S.%f', errors='coerce')
+            
+            # 方法2: 如果上面失敗，嘗試 HH:MM:SS
+            if datetime_series.isna().all():
+                datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S', errors='coerce')
+            
+            # 方法3: 如果還是失敗，嘗試自動推斷
+            if datetime_series.isna().all():
+                datetime_series = pd.to_datetime(time_series, errors='coerce', infer_datetime_format=True)
+            
+            # 方法4: 最後嘗試，如果是數字格式（秒數）
+            if datetime_series.isna().all():
+                try:
+                    numeric_time = pd.to_numeric(time_series, errors='coerce')
+                    if not numeric_time.isna().all():
+                        # 假設是秒數，轉換為timedelta
+                        datetime_series = pd.to_timedelta(numeric_time, unit='s')
+                except:
+                    pass
+                    
+        except Exception as e:
+            return None, f"時間格式解析失敗: {str(e)}"
+        
+        # 檢查時間解析結果
         valid_times_mask = datetime_series.notna()
+        if valid_times_mask.sum() == 0:
+            return None, "PTAT Log時間格式無法解析 - 所有時間數據都無效"
+        
+        # 過濾有效數據
         df = df[valid_times_mask].copy()
         if df.empty: 
-            return None, "PTAT Log時間格式無法解析"
+            return None, "過濾後沒有有效的時間數據"
+        
+        # 計算相對時間
         valid_datetimes = datetime_series[valid_times_mask]
-        df['time_index'] = valid_datetimes - valid_datetimes.iloc[0]
+        
+        # 如果是timestamp格式，轉換為相對時間
+        if hasattr(valid_datetimes.iloc[0], 'to_pydatetime'):
+            df['time_index'] = valid_datetimes - valid_datetimes.iloc[0]
+        else:
+            # 如果已經是timedelta格式
+            df['time_index'] = valid_datetimes
+        
+        # 數據清理：轉換數值欄位
+        for col in df.columns:
+            if col not in ['time_index', 'Version', 'Date', 'Time', 'CPU Name', 'CPU Brand String', 'Host ID']:
+                try:
+                    # 嘗試轉換為數值
+                    numeric_data = pd.to_numeric(df[col], errors='coerce')
+                    # 如果轉換成功且不是全部NaN，則使用數值版本
+                    if not numeric_data.isna().all():
+                        df[col] = numeric_data
+                except:
+                    # 轉換失敗就保持原樣
+                    pass
+        
+        # 添加PTAT前綴
         df = df.add_prefix('PTAT: ')
         df.rename(columns={'PTAT: time_index': 'time_index'}, inplace=True)
-        return df.set_index('time_index'), "PTAT Log"
-    except Exception as e:
-        return None, f"解析PTAT Log時出錯: {e}"
-
-def parse_yokogawa(file_content, is_excel=False):
-    try:
-        read_func = pd.read_excel if is_excel else pd.read_csv
         
-        if is_excel:
-            possible_headers = [29, 28, 30, 27]
-        else:
-            possible_headers = [0, 1, 2]
-            
-        df = None
-        found_time_col = None
-        successful_header = None
+        # 設置時間索引
+        result_df = df.set_index('time_index')
         
-        for header_row in possible_headers:
-            try:
-                file_content.seek(0)
-                df = read_func(file_content, header=header_row, thousands=',')
-                df.columns = df.columns.str.strip()
-                
-                time_candidates = ['Time', 'TIME', 'time', 'Date', 'DATE', 'date', 
-                                 'DateTime', 'DATETIME', 'datetime', '時間', '日期時間',
-                                 'Timestamp', 'TIMESTAMP', 'timestamp']
-                
-                for candidate in time_candidates:
-                    if candidate in df.columns:
-                        found_time_col = candidate
-                        successful_header = header_row
-                        break
-                
-                if found_time_col:
-                    break
-                    
-            except Exception as e:
-                continue
+        return result_df, "PTAT Log"
         
-        if df is None or found_time_col is None:
-            error_msg = "YOKOGAWA Log中找不到時間欄位。"
-            if df is not None:
-                error_msg += f" 可用欄位: {list(df.columns)[:15]}"
-            return None, error_msg
-        
-        time_column = found_time_col
-        
-        if is_excel and successful_header == 29:
-            try:
-                file_content.seek(0)
-                ch_row = pd.read_excel(file_content, header=None, skiprows=27, nrows=1).iloc[0]
-                file_content.seek(0)
-                tag_row = pd.read_excel(file_content, header=None, skiprows=28, nrows=1).iloc[0]
-                
-                new_column_names = {}
-                for i, original_col in enumerate(df.columns):
-                    if i < len(ch_row) and i < len(tag_row):
-                        ch_name = str(ch_row.iloc[i]).strip() if pd.notna(ch_row.iloc[i]) else ""
-                        tag_name = str(tag_row.iloc[i]).strip() if pd.notna(tag_row.iloc[i]) else ""
-                        
-                        if tag_name and tag_name != 'nan' and tag_name != 'Tag':
-                            new_column_names[original_col] = tag_name
-                        elif ch_name and ch_name != 'nan' and ch_name.startswith('CH'):
-                            new_column_names[original_col] = ch_name
-                        else:
-                            new_column_names[original_col] = original_col
-                    else:
-                        new_column_names[original_col] = original_col
-                
-                df.rename(columns=new_column_names, inplace=True)
-                
-            except Exception as e:
-                pass
-        
-        time_series = df[time_column].astype(str).str.strip()
-        
+    except pd.errors.EmptyDataError:
+        return None, "PTAT Log檔案為空或格式錯誤"
+    except pd.errors.ParserError as e:
+        return None, f"PTAT Log解析錯誤: {str(e)}"
+    except UnicodeDecodeError:
+        # 如果UTF-8失敗，嘗試其他編碼
         try:
-            df['time_index'] = pd.to_timedelta(time_series + ':00').fillna(pd.to_timedelta('00:00:00'))
+            file_content.seek(0)
+            df = pd.read_csv(
+                file_content, 
+                header=0,
+                thousands=',', 
+                low_memory=False,
+                encoding='latin1',  # 嘗試latin1編碼
+                sep=',',
+                on_bad_lines='skip',
+                dtype=str
+            )
+            # 重複處理邏輯
+            df.columns = df.columns.str.strip()
+            time_column = 'Time'
+            if time_column not in df.columns: 
+                return None, "PTAT Log中找不到 'Time' 欄位"
             
-            if df['time_index'].isna().all():
-                raise ValueError("Timedelta 轉換失敗")
-                
-        except:
-            try:
-                datetime_series = pd.to_datetime(time_series, format='%H:%M:%S', errors='coerce')
-                if datetime_series.notna().sum() == 0:
-                    datetime_series = pd.to_datetime(time_series, errors='coerce')
-                
-                df['time_index'] = datetime_series - datetime_series.iloc[0]
-                
-            except Exception as e:
-                return None, f"無法解析時間格式 '{time_column}': {e}. 樣本: {time_series.head(3).tolist()}"
-        
-        valid_times_mask = df['time_index'].notna()
-        if valid_times_mask.sum() == 0:
-            return None, f"時間欄位 '{time_column}' 中沒有有效的時間數據"
-        
-        df = df[valid_times_mask].copy()
-        
-        if len(df) > 0:
-            start_time = df['time_index'].iloc[0]
-            df['time_index'] = df['time_index'] - start_time
-        
-        numeric_columns = df.select_dtypes(include=['number']).columns
-        for col in numeric_columns:
-            if col != 'time_index':
-                df[col] = pd.to_numeric(df[col], errors='coerce')
-        
-        df = df.add_prefix('YOKO: ')
-        df.rename(columns={'YOKO: time_index': 'time_index'}, inplace=True)
-        
-        return df.set_index('time_index'), "YOKOGAWA Log"
-        
+            time_series = df[time_column].astype(str).str.strip()
+            time_series_cleaned = time_series.str.replace(r':(\d{3})$', r'.\1', regex=True)
+            datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S.%f', errors='coerce')
+            
+            if datetime_series.isna().all():
+                datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S', errors='coerce')
+            
+            valid_times_mask = datetime_series.notna()
+            if valid_times_mask.sum() == 0:
+                return None, "PTAT Log時間格式無法解析"
+            
+            df = df[valid_times_mask].copy()
+            valid_datetimes = datetime_series[valid_times_mask]
+            df['time_index'] = valid_datetimes - valid_datetimes.iloc[0]
+            
+            for col in df.columns:
+                if col not in ['time_index', 'Version', 'Date', 'Time', 'CPU Name', 'CPU Brand String', 'Host ID']:
+                    try:
+                        numeric_data = pd.to_numeric(df[col], errors='coerce')
+                        if not numeric_data.isna().all():
+                            df[col] = numeric_data
+                    except:
+                        pass
+            
+            df = df.add_prefix('PTAT: ')
+            df.rename(columns={'PTAT: time_index': 'time_index'}, inplace=True)
+            result_df = df.set_index('time_index')
+            
+            return result_df, "PTAT Log"
+            
+        except Exception as e:
+            return None, f"編碼錯誤無法修復: {str(e)}"
     except Exception as e:
-        return None, f"解析YOKOGAWA Log時出錯: {e}"
-
-def parse_dispatcher(uploaded_file):
-    filename = uploaded_file.name
-    file_content = io.BytesIO(uploaded_file.getvalue())
-    is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
-    
-    try:
-        if is_excel:
-            try:
-                file_content.seek(0)
-                df_sniff = pd.read_excel(file_content, header=None, skiprows=27, nrows=1)
-                
-                ch_found = False
-                for _, row in df_sniff.iterrows():
-                    for cell in row:
-                        if isinstance(cell, str) and re.match(r'CH\d{3}', cell.strip()):
-                            ch_found = True
-                            break
-                    if ch_found:
-                        break
-                
-                file_content.seek(0)
-                return parse_yokogawa(file_content, is_excel)
-                    
-            except Exception as e:
-                file_content.seek(0)
-                return parse_yokogawa(file_content, is_excel)
-        
-        else:
-            try:
-                file_content.seek(0)
-                first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(10)])
-                file_content.seek(0)
-                
-                if 'MSR Package Temperature' in first_lines_text:
-                    return parse_ptat(file_content)
+        return None, f"解析PTAT Log時出現未知錯誤: {str(e)}"
                 else:
                     pass
                     
