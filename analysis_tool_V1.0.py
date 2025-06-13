@@ -1244,4 +1244,46 @@ def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
     fig.tight_layout()
     return fig
 
-def generate
+def generate_flexible_chart(df, left_col, right_col, x_limits, y_limits=None):
+    if df is None or not left_col or left_col not in df.columns: 
+        return None
+    if right_col and right_col != 'None' and right_col not in df.columns: 
+        return None
+    
+    df_chart = df.copy()
+    if x_limits:
+        x_min_td, x_max_td = pd.to_timedelta(x_limits[0], unit='s'), pd.to_timedelta(x_limits[1], unit='s')
+        df_chart = df_chart[(df_chart.index >= x_min_td) & (df_chart.index <= x_max_td)]
+    if df_chart.empty: 
+        return None
+    
+    df_chart.loc[:, 'left_val'] = pd.to_numeric(df_chart[left_col], errors='coerce')
+    if right_col and right_col != 'None':
+        df_chart.loc[:, 'right_val'] = pd.to_numeric(df_chart[right_col], errors='coerce')
+    
+    fig, ax1 = plt.subplots(figsize=(10.2, 5.1))
+    plt.title(f'{left_col} {"& " + right_col if right_col and right_col != "None" else ""}', fontsize=14, fontweight='bold')
+    
+    x_axis_seconds = df_chart.index.total_seconds()
+    color = 'tab:blue'
+    ax1.set_xlabel('Elapsed Time (seconds)', fontsize=11)
+    ax1.set_ylabel(left_col, color=color, fontsize=11)
+    ax1.plot(x_axis_seconds, df_chart['left_val'], color=color, linewidth=1.5)
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    
+    if y_limits:
+        ax1.set_ylim(y_limits)
+    
+    if right_col and right_col != 'None':
+        ax2 = ax1.twinx()
+        color = 'tab:red'
+        ax2.set_ylabel(right_col, color=color, fontsize=11)
+        ax2.plot(x_axis_seconds, df_chart['right_val'], color=color, linewidth=1.5)
+        ax2.tick_params(axis='y', labelcolor=color)
+    
+    if x_limits: 
+        ax1.set_xlim(x_limits)
+    
+    fig.tight_layout()
+    return fig
