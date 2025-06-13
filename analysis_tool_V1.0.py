@@ -947,9 +947,8 @@ if uploaded_files:
             </div>
             """, unsafe_allow_html=True)
 else:
-    # 🏠 歡迎頁面
     st.markdown("""
-    <div class="info-box">
+    <div style="background-color: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; padding: 1rem; border-radius: 8px; margin: 1rem 0;">
         <h3>🚀 開始使用</h3>
         <p><strong>請在左側上傳您的 Log 文件開始分析</strong></p>
         
@@ -958,16 +957,8 @@ else:
             <li><strong>YOKOGAWA Excel (.xlsx)</strong> - 自動識別CH編號與Tag標籤</li>
             <li><strong>PTAT CSV (.csv)</strong> - CPU溫度、頻率、功耗分析</li>
         </ul>
-        
-        <h4>✨ 主要功能</h4>
-        <ul>
-            <li>🎯 智能檔案格式識別</li>
-            <li>📊 即時數據統計分析</li>
-            <li>📈 動態圖表與範圍調整</li>
-            <li>🔄 多檔案混合比較</li>
-        </ul>
     </div>
-    """, unsafe_allow_html=True)
+    """, unsafe_allow_html=True)  
     
     # 📞 支援資訊
     st.sidebar.markdown("---")
