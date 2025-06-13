@@ -1,5 +1,5 @@
-# universal_analysis_platform_v8_5_final_fixed.py
-# 完整的數據分析平台 - 包含PTAT修復和美化界面 - PTAT統計表格垂直排列修正版
+# universal_analysis_platform_v8_6_final.py
+# 完整的數據分析平台 - YOKOGAWA圖表布局優化版
 
 import streamlit as st
 import pandas as pd
@@ -10,7 +10,7 @@ from datetime import datetime
 import numpy as np
 
 # 版本資訊
-VERSION = "v8.5 Final Fixed"
+VERSION = "v8.6 Final"
 VERSION_DATE = "2025年6月"
 
 # --- 子模組：PTAT Log 解析器 (修復版) ---
@@ -347,7 +347,7 @@ def calculate_ptat_stats(df, x_limits=None):
 
 # --- 圖表繪製函式 ---
 def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
-    """改進版YOKOGAWA溫度圖表"""
+    """改進版YOKOGAWA溫度圖表 - 調整為與PTAT圖表相同大小"""
     if df is None: 
         return None
     
@@ -360,7 +360,8 @@ def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
     if df_chart.empty:
         return None
     
-    fig, ax = plt.subplots(figsize=(10.2, 6.8))
+    # 調整圖表大小與PTAT圖表一致
+    fig, ax = plt.subplots(figsize=(10.2, 5.1))
     
     numeric_cols = df_chart.select_dtypes(include=['number']).columns
     cols_to_plot = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
@@ -450,6 +451,8 @@ def display_version_info():
         - 🎯 新增Y軸範圍自定義功能
         - 🛠️ 修復PTAT Log解析問題
         - ✨ PTAT統計表格垂直排列，無需滾動查看完整數據
+        - 📈 YOKOGAWA圖表大小調整為與PTAT圖表一致
+        - 🔄 YOKOGAWA統計數據移至圖表下方，布局更佳
         
         ---
         💡 **使用提示：** 支援YOKOGAWA Excel格式、PTAT CSV格式，提供智能解析與多維度統計分析
@@ -628,49 +631,46 @@ def main():
                 x_limits = None
                 y_limits = None
             
-            # 主要內容區域
-            col1, col2 = st.columns([2, 1])
+            # 主要內容區域 - YOKOGAWA 全寬度顯示
+            st.markdown("### 📈 YOKOGAWA 全通道溫度曲線圖")
             
-            with col1:
-                st.markdown("### 📈 YOKOGAWA 全通道溫度曲線圖")
+            if df_check is not None:
+                fig = generate_yokogawa_temp_chart(df_check, x_limits, y_limits)
+                if fig: 
+                    st.pyplot(fig, use_container_width=True)
+                else: 
+                    st.warning("⚠️ 無法產生溫度圖表")
+            else:
+                st.error("❌ 數據解析失敗")
+            
+            # 統計數據移到圖表下方
+            st.markdown("### 📊 統計數據")
+            stats_df = calculate_temp_stats(df_check, x_limits)
+            if not stats_df.empty:
+                st.dataframe(stats_df, use_container_width=True, hide_index=True)
                 
-                if df_check is not None:
-                    fig = generate_yokogawa_temp_chart(df_check, x_limits, y_limits)
-                    if fig: 
-                        st.pyplot(fig)
-                    else: 
-                        st.warning("⚠️ 無法產生溫度圖表")
-                else:
-                    st.error("❌ 數據解析失敗")
-            
-            with col2:
-                st.markdown("### 📊 統計數據")
-                stats_df = calculate_temp_stats(df_check, x_limits)
-                if not stats_df.empty:
-                    st.dataframe(stats_df, use_container_width=True, hide_index=True)
-                    
-                    if len(stats_df) > 0:
-                        try:
-                            max_temps = [float(x.replace('°C', '')) for x in stats_df['Tmax (°C)'] if x != 'N/A']
-                            avg_temps = [float(x.replace('°C', '')) for x in stats_df['Tavg (°C)'] if x != 'N/A']
-                            
-                            if max_temps and avg_temps:
-                                st.markdown(f"""
-                                <div class="metric-card">
-                                    <strong>🔥 整體最高溫：</strong> {max(max_temps):.1f}°C<br>
-                                    <strong>📊 平均溫度：</strong> {sum(avg_temps)/len(avg_temps):.1f}°C<br>
-                                    <strong>📈 活躍通道：</strong> {len(stats_df)} 個
-                                </div>
-                                """, unsafe_allow_html=True)
-                        except:
-                            pass
-                else:
-                    st.markdown("""
-                    <div class="info-box">
-                        ❓ 無統計數據可顯示<br>
-                        請檢查時間範圍設定
-                    </div>
-                    """, unsafe_allow_html=True)
+                if len(stats_df) > 0:
+                    try:
+                        max_temps = [float(x.replace('°C', '')) for x in stats_df['Tmax (°C)'] if x != 'N/A']
+                        avg_temps = [float(x.replace('°C', '')) for x in stats_df['Tavg (°C)'] if x != 'N/A']
+                        
+                        if max_temps and avg_temps:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <strong>🔥 整體最高溫：</strong> {max(max_temps):.1f}°C<br>
+                                <strong>📊 平均溫度：</strong> {sum(avg_temps)/len(avg_temps):.1f}°C<br>
+                                <strong>📈 活躍通道：</strong> {len(stats_df)} 個
+                            </div>
+                            """, unsafe_allow_html=True)
+                    except:
+                        pass
+            else:
+                st.markdown("""
+                <div class="info-box">
+                    ❓ 無統計數據可顯示<br>
+                    請檢查時間範圍設定
+                </div>
+                """, unsafe_allow_html=True)
         
         else:
             # 處理PTAT或多檔案
