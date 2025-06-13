@@ -1,11 +1,11 @@
-# universal_analysis_platform_v7_2_yokogawa_time_range.py
+# universal_analysis_platform_v7_3_improved.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
 import re
 
-# --- 子模組：PTAT Log 解析器 (穩定版) ---
+# --- 子模組：PTAT Log 解析器 (靜默版) ---
 def parse_ptat(file_content):
     try:
         df = pd.read_csv(file_content, header=0, thousands=',', low_memory=False)
@@ -26,14 +26,13 @@ def parse_ptat(file_content):
     except Exception as e:
         return None, f"解析PTAT Log時出錯: {e}"
 
-# --- 子模組：YOKOGAWA Log 解析器 (智能欄位命名版) ---
+# --- 子模組：YOKOGAWA Log 解析器 (靜默智能版) ---
 def parse_yokogawa(file_content, is_excel=False):
     try:
         read_func = pd.read_excel if is_excel else pd.read_csv
         
         # 根據你的文件結構，表頭在第30行（pandas的header=29）
         if is_excel:
-            # 首先嘗試第30行作為表頭（這是你文件的實際結構）
             possible_headers = [29, 28, 30, 27]  # 29對應第30行
         else:
             possible_headers = [0, 1, 2]
@@ -50,9 +49,6 @@ def parse_yokogawa(file_content, is_excel=False):
                 # 清理欄位名稱
                 df.columns = df.columns.str.strip()
                 
-                # Debug 信息
-                st.write(f"嘗試 header={header_row}, 欄位: {list(df.columns[:10])}")  # 只顯示前10個欄位
-                
                 # 檢查可能的時間欄位名稱
                 time_candidates = ['Time', 'TIME', 'time', 'Date', 'DATE', 'date', 
                                  'DateTime', 'DATETIME', 'datetime', '時間', '日期時間',
@@ -65,23 +61,20 @@ def parse_yokogawa(file_content, is_excel=False):
                         break
                 
                 if found_time_col:
-                    st.success(f"成功找到時間欄位 '{found_time_col}' 在 header={header_row}")
                     break
                     
             except Exception as e:
-                st.warning(f"Header row {header_row} 失敗: {e}")
                 continue
         
         if df is None or found_time_col is None:
             error_msg = f"YOKOGAWA Log中找不到時間欄位。"
             if df is not None:
-                error_msg += f" 可用欄位: {list(df.columns)[:15]}"  # 限制顯示欄位數量
+                error_msg += f" 可用欄位: {list(df.columns)[:15]}"
             return None, error_msg
         
         time_column = found_time_col
-        st.info(f"使用時間欄位: {time_column}, 表頭行: {successful_header}")
         
-        # 🔥 新增：智能欄位重命名功能
+        # 🔥 智能欄位重命名功能（靜默執行）
         if is_excel and successful_header == 29:  # 第30行作為表頭
             try:
                 # 讀取第28行(CH編號)和第29行(Tag標籤)
@@ -110,26 +103,13 @@ def parse_yokogawa(file_content, is_excel=False):
                 # 套用新的欄位名稱
                 df.rename(columns=new_column_names, inplace=True)
                 
-                # 顯示重命名結果
-                renamed_channels = [(k, v) for k, v in new_column_names.items() if k != v and v not in ['Date', 'Time', 'sec']]
-                if renamed_channels:
-                    st.success(f"智能重命名完成！重命名了 {len(renamed_channels)} 個溫度通道")
-                    st.write("重命名對照表:")
-                    for old_name, new_name in renamed_channels[:10]:  # 只顯示前10個
-                        st.write(f"  {old_name} → {new_name}")
-                    if len(renamed_channels) > 10:
-                        st.write(f"  ... 及其他 {len(renamed_channels) - 10} 個通道")
-                
             except Exception as e:
-                st.warning(f"智能重命名失敗，將使用原始欄位名稱: {e}")
-        
-        # 顯示前幾筆時間數據供debug
-        st.write(f"時間欄位前5筆數據: {df[time_column].head().tolist()}")
+                pass  # 靜默處理重命名失敗
         
         # 處理時間數據
         time_series = df[time_column].astype(str).str.strip()
         
-        # 專門處理 HH:MM:SS 格式（你的文件格式）
+        # 專門處理 HH:MM:SS 格式
         try:
             # 先嘗試直接轉為 timedelta（適用於純時間格式）
             df['time_index'] = pd.to_timedelta(time_series + ':00').fillna(pd.to_timedelta('00:00:00'))
@@ -174,23 +154,16 @@ def parse_yokogawa(file_content, is_excel=False):
         df = df.add_prefix('YOKO: ')
         df.rename(columns={'YOKO: time_index': 'time_index'}, inplace=True)
         
-        st.success(f"YOKOGAWA 解析成功！數據行數: {len(df)}, 數值欄位數: {len([c for c in df.columns if df[c].dtype in ['float64', 'int64']])}")
-        
         return df.set_index('time_index'), "YOKOGAWA Log"
         
     except Exception as e:
-        import traceback
-        error_detail = traceback.format_exc()
-        st.error(f"解析YOKOGAWA Log詳細錯誤:\n{error_detail}")
         return None, f"解析YOKOGAWA Log時出錯: {e}"
 
-# --- 主模組：解析器調度中心 (修正版) ---
+# --- 主模組：解析器調度中心 (靜默版) ---
 def parse_dispatcher(uploaded_file):
     filename = uploaded_file.name
     file_content = io.BytesIO(uploaded_file.getvalue())
     is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
-    
-    st.info(f"開始解析文件: {filename} ({'Excel' if is_excel else 'CSV'})")
     
     try:
         # 對於Excel文件，直接檢查是否為YOKOGAWA格式
@@ -209,18 +182,10 @@ def parse_dispatcher(uploaded_file):
                     if ch_found:
                         break
                 
-                if ch_found:
-                    st.info("檢測到 YOKOGAWA 格式標識")
-                    file_content.seek(0)
-                    return parse_yokogawa(file_content, is_excel)
-                else:
-                    # 即使沒有找到CH標識，也嘗試解析YOKOGAWA（可能格式稍有不同）
-                    st.warning("未找到標準 YOKOGAWA CH 標識，但仍嘗試 YOKOGAWA 解析")
-                    file_content.seek(0)
-                    return parse_yokogawa(file_content, is_excel)
+                file_content.seek(0)
+                return parse_yokogawa(file_content, is_excel)
                     
             except Exception as e:
-                st.warning(f"Excel 格式檢測失敗: {e}，嘗試直接解析")
                 file_content.seek(0)
                 return parse_yokogawa(file_content, is_excel)
         
@@ -232,22 +197,57 @@ def parse_dispatcher(uploaded_file):
                 file_content.seek(0)
                 
                 if 'MSR Package Temperature' in first_lines_text:
-                    st.info("檢測到 PTAT 格式")
                     return parse_ptat(file_content)
                 else:
-                    st.warning("未檢測到已知格式，嘗試通用CSV解析")
+                    # 嘗試通用CSV解析
+                    pass
                     
             except Exception as e:
-                st.error(f"CSV 格式檢查失敗: {e}")
+                pass
         
     except Exception as e:
-        st.error(f"文件嗅探失敗: {e}")
+        pass
         
     return None, f"未知的Log檔案格式: {filename}"
 
-# --- 圖表繪製函式 (修正版) ---
-def generate_yokogawa_temp_chart(df, x_limits=None):
-    """修正版YOKOGAWA溫度圖表，支援時間範圍調整"""
+# --- 溫度統計計算函式 ---
+def calculate_temp_stats(df, x_limits=None):
+    """計算溫度統計數據（最大值和平均值）"""
+    if df is None or df.empty:
+        return pd.DataFrame()
+    
+    # 套用時間範圍過濾
+    df_stats = df.copy()
+    if x_limits:
+        x_min_td = pd.to_timedelta(x_limits[0], unit='s')
+        x_max_td = pd.to_timedelta(x_limits[1], unit='s')
+        df_stats = df_stats[(df_stats.index >= x_min_td) & (df_stats.index <= x_max_td)]
+    
+    if df_stats.empty:
+        return pd.DataFrame()
+    
+    # 找出數值型欄位（排除時間相關欄位）
+    numeric_cols = df_stats.select_dtypes(include=['number']).columns
+    temp_cols = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
+    
+    # 計算統計數據
+    stats_data = []
+    for col in temp_cols:
+        y_data = pd.to_numeric(df_stats[col], errors='coerce')
+        if not y_data.isna().all():
+            t_max = y_data.max()
+            t_avg = y_data.mean()
+            stats_data.append({
+                '通道名稱': col,
+                'Tmax (°C)': f"{t_max:.2f}" if pd.notna(t_max) else "N/A",
+                'Tavg (°C)': f"{t_avg:.2f}" if pd.notna(t_avg) else "N/A"
+            })
+    
+    return pd.DataFrame(stats_data)
+
+# --- 圖表繪製函式 (改進版) ---
+def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
+    """改進版YOKOGAWA溫度圖表，支援時間範圍和Y軸範圍調整"""
     if df is None: 
         return None
     
@@ -270,7 +270,6 @@ def generate_yokogawa_temp_chart(df, x_limits=None):
     max_channels = 15
     if len(cols_to_plot) > max_channels:
         cols_to_plot = cols_to_plot[:max_channels]
-        st.warning(f"通道數過多，僅顯示前 {max_channels} 個通道")
     
     for col in cols_to_plot:
         y_data = pd.to_numeric(df_chart[col], errors='coerce')
@@ -284,14 +283,18 @@ def generate_yokogawa_temp_chart(df, x_limits=None):
     ax.grid(True, linestyle='--', linewidth=0.5)
     ax.legend(title="Channels", bbox_to_anchor=(1.04, 1), loc="upper left", fontsize=8)
     
-    # 如果有設定X軸範圍，套用到圖表
+    # 套用X軸範圍
     if x_limits:
         ax.set_xlim(x_limits)
+    
+    # 🔥 新增：套用Y軸範圍
+    if y_limits:
+        ax.set_ylim(y_limits)
     
     fig.tight_layout()
     return fig
 
-def generate_flexible_chart(df, left_col, right_col, x_limits):
+def generate_flexible_chart(df, left_col, right_col, x_limits, y_limits=None):
     if df is None or not left_col or left_col not in df.columns: return None
     if right_col and right_col != 'None' and right_col not in df.columns: return None
     df_chart = df.copy()
@@ -306,6 +309,11 @@ def generate_flexible_chart(df, left_col, right_col, x_limits):
     x_axis_seconds = df_chart.index.total_seconds()
     color = 'tab:blue'; ax1.set_xlabel('Elapsed Time (seconds)', fontsize=12); ax1.set_ylabel(left_col, color=color, fontsize=12)
     ax1.plot(x_axis_seconds, df_chart['left_val'], color=color); ax1.tick_params(axis='y', labelcolor=color); ax1.grid(True, linestyle='--', linewidth=0.5)
+    
+    # 套用Y軸範圍（左軸）
+    if y_limits:
+        ax1.set_ylim(y_limits)
+    
     if right_col and right_col != 'None':
         ax2 = ax1.twinx(); color = 'tab:red'
         ax2.set_ylabel(right_col, color=color, fontsize=12); ax2.plot(x_axis_seconds, df_chart['right_val'], color=color)
@@ -316,34 +324,32 @@ def generate_flexible_chart(df, left_col, right_col, x_limits):
 
 # --- Streamlit 網頁應用程式介面 ---
 st.set_page_config(layout="wide")
-st.title("通用數據分析平台 - YOKOGAWA 智能命名版")
+st.title("通用數據分析平台 - 改進版")
 st.sidebar.header("控制面板")
 uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['csv', 'xlsx'], accept_multiple_files=True)
-st.sidebar.info("注意：此版本為YOKOGAWA加入了智能欄位命名和時間範圍調整功能。")
 
 if uploaded_files:
-    # --- 關鍵修正：只在需要時才進行檔案類型預判 ---
+    # 🔥 靜默檢測檔案類型
     if len(uploaded_files) == 1:
-        # 傳遞完整的檔案物件進行預判
         df_check, log_type_check = parse_dispatcher(uploaded_files[0])
         is_single_yokogawa = (log_type_check == "YOKOGAWA Log")
     else:
         is_single_yokogawa = False
 
-    # --- YOKOGAWA 專屬顯示模式 (新增時間範圍調整) ---
+    # --- YOKOGAWA 專屬顯示模式 ---
     if is_single_yokogawa:
-        st.sidebar.success(f"檔案 '{uploaded_files[0].name}'\n(辨識為: YOKOGAWA Log)")
+        st.sidebar.success(f"檔案: {uploaded_files[0].name}")
         
-        # 🔥 新增：YOKOGAWA 時間範圍調整控制項
-        st.sidebar.header("YOKOGAWA 圖表設定")
+        # YOKOGAWA 圖表設定
+        st.sidebar.header("圖表設定")
         if df_check is not None and len(df_check) > 0:
-            # 計算時間範圍
+            # 時間範圍設定
             x_min_val = df_check.index.min().total_seconds()
             x_max_val = df_check.index.max().total_seconds()
             
             if x_min_val < x_max_val:
                 x_min, x_max = st.sidebar.slider(
-                    "選擇時間範圍 (秒)", 
+                    "時間範圍 (秒)", 
                     float(x_min_val), 
                     float(x_max_val), 
                     (float(x_min_val), float(x_max_val)),
@@ -351,40 +357,92 @@ if uploaded_files:
                 )
                 x_limits = (x_min, x_max)
             else:
-                st.sidebar.write("數據時間範圍不足。")
                 x_limits = None
+            
+            # 🔥 新增：Y軸溫度範圍設定
+            st.sidebar.subheader("Y軸溫度範圍設定")
+            
+            # 計算當前時間範圍內的溫度範圍
+            df_temp = df_check.copy()
+            if x_limits:
+                x_min_td = pd.to_timedelta(x_limits[0], unit='s')
+                x_max_td = pd.to_timedelta(x_limits[1], unit='s')
+                df_temp = df_temp[(df_temp.index >= x_min_td) & (df_temp.index <= x_max_td)]
+            
+            if not df_temp.empty:
+                numeric_cols = df_temp.select_dtypes(include=['number']).columns
+                temp_cols = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
+                
+                if temp_cols:
+                    # 計算所有溫度通道的最小最大值
+                    all_temps = pd.concat([pd.to_numeric(df_temp[col], errors='coerce') for col in temp_cols])
+                    all_temps = all_temps.dropna()
+                    
+                    if len(all_temps) > 0:
+                        temp_min = float(all_temps.min())
+                        temp_max = float(all_temps.max())
+                        
+                        # 添加一些緩衝空間
+                        temp_range = temp_max - temp_min
+                        buffer = temp_range * 0.1 if temp_range > 0 else 5
+                        
+                        auto_y_range = st.sidebar.checkbox("自動Y軸範圍", value=True)
+                        
+                        if not auto_y_range:
+                            y_min, y_max = st.sidebar.slider(
+                                "溫度範圍 (°C)",
+                                temp_min - buffer,
+                                temp_max + buffer,
+                                (temp_min - buffer, temp_max + buffer),
+                                step=0.1,
+                                key="yokogawa_y_range"
+                            )
+                            y_limits = (y_min, y_max)
+                        else:
+                            y_limits = None
+                    else:
+                        y_limits = None
+                else:
+                    y_limits = None
+            else:
+                y_limits = None
         else:
             x_limits = None
+            y_limits = None
         
+        # 顯示圖表
         st.header("YOKOGAWA 全通道溫度曲線圖")
         
-        # 直接使用預判時已解析的 DataFrame，並套用時間範圍
         if df_check is not None:
-            st.write(f"數據概況：{len(df_check)} 筆記錄，{len(df_check.columns)} 個欄位")
+            # 顯示數據概況（簡化版）
+            st.write(f"📊 數據記錄：{len(df_check)} 筆，通道數：{len([c for c in df_check.columns if df_check[c].dtype in ['float64', 'int64']])} 個")
             
-            # 🔥 修正：將時間範圍參數傳遞給圖表函式
-            fig = generate_yokogawa_temp_chart(df_check, x_limits)
+            # 生成圖表
+            fig = generate_yokogawa_temp_chart(df_check, x_limits, y_limits)
             if fig: 
                 st.pyplot(fig)
-            else: 
-                st.warning("無法產生YOKOGAWA溫度圖表。")
-        else:
-            st.error("DataFrame 為空，無法繪製圖表")
-
-    # --- 通用互動式分析模式 (適用於PTAT或多檔案) ---
-    else:
-        all_dfs = []; log_types_detected = []
-        with st.spinner('正在解析所有Log檔案...'):
-            for file in uploaded_files:
-                df, log_type = parse_dispatcher(file)
-                if df is not None:
-                    all_dfs.append(df); log_types_detected.append(f"{file.name} (辨識為: {log_type})")
+                
+                # 🔥 新增：顯示統計表格
+                st.subheader("溫度統計數據")
+                stats_df = calculate_temp_stats(df_check, x_limits)
+                if not stats_df.empty:
+                    st.dataframe(stats_df, use_container_width=True)
                 else:
-                    st.error(f"檔案 '{file.name}' 解析失敗: {log_type}")
+                    st.write("無統計數據可顯示")
+            else: 
+                st.warning("無法產生溫度圖表")
+        else:
+            st.error("數據解析失敗")
+
+    # --- 通用互動式分析模式 ---
+    else:
+        all_dfs = []; 
+        for file in uploaded_files:
+            df, log_type = parse_dispatcher(file)
+            if df is not None:
+                all_dfs.append(df)
         
         if all_dfs:
-            st.sidebar.success("檔案解析完成！")
-            for name in log_types_detected: st.sidebar.markdown(f"- `{name}`")
             master_df = pd.concat(all_dfs); 
             master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean(numeric_only=True).interpolate(method='linear')
             numeric_columns = master_df_resampled.columns.tolist()
@@ -402,16 +460,38 @@ if uploaded_files:
                     try: default_right_index = right_y_axis_options.index(default_right)
                     except ValueError: default_right_index = 1
                 right_y_axis = st.sidebar.selectbox("選擇右側Y軸變數 (可不選)", options=right_y_axis_options, index=default_right_index)
-                st.sidebar.header("X軸範圍設定 (秒)")
-                x_min_val = master_df_resampled.index.min().total_seconds(); x_max_val = master_df_resampled.index.max().total_seconds()
+                
+                # X軸和Y軸範圍設定
+                st.sidebar.header("軸範圍設定")
+                x_min_val = master_df_resampled.index.min().total_seconds()
+                x_max_val = master_df_resampled.index.max().total_seconds()
                 if x_min_val < x_max_val:
-                    x_min, x_max = st.sidebar.slider("選擇時間範圍", x_min_val, x_max_val, (x_min_val, x_max_val))
+                    x_min, x_max = st.sidebar.slider("時間範圍 (秒)", x_min_val, x_max_val, (x_min_val, x_max_val))
                 else:
-                    st.sidebar.write("數據時間範圍不足。"); x_min, x_max = x_min_val, x_max_val
+                    x_min, x_max = x_min_val, x_max_val
+                
+                # Y軸範圍設定
+                auto_y = st.sidebar.checkbox("自動Y軸範圍", value=True)
+                y_limits = None
+                if not auto_y and left_y_axis:
+                    left_data = pd.to_numeric(master_df_resampled[left_y_axis], errors='coerce').dropna()
+                    if len(left_data) > 0:
+                        data_min, data_max = float(left_data.min()), float(left_data.max())
+                        data_range = data_max - data_min
+                        buffer = data_range * 0.1 if data_range > 0 else 1
+                        y_min, y_max = st.sidebar.slider(
+                            f"{left_y_axis} 範圍",
+                            data_min - buffer,
+                            data_max + buffer,
+                            (data_min - buffer, data_max + buffer),
+                            step=0.1
+                        )
+                        y_limits = (y_min, y_max)
+                
                 st.header("動態比較圖表")
-                fig = generate_flexible_chart(master_df_resampled, left_y_axis, right_y_axis, (x_min, x_max))
+                fig = generate_flexible_chart(master_df_resampled, left_y_axis, right_y_axis, (x_min, x_max), y_limits)
                 if fig: st.pyplot(fig)
             else:
-                st.warning("所有檔案解析後，無可用的數值型數據進行繪圖。")
+                st.warning("無可用的數值型數據進行繪圖")
 else:
-    st.sidebar.info("請上傳您的 Log File(s) 開始分析。")
+    st.sidebar.info("請上傳您的 Log File(s) 開始分析")
