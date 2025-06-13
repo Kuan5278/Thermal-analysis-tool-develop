@@ -33,15 +33,14 @@ def parse_yokogawa(file_content, is_excel=False):
         df = read_func(file_content, header=28, thousands=',')
         df.columns = df.columns.str.strip()
         
-        # 關鍵修正：使用 'TIME' 作為時間欄位，不再使用 'RT'
-        time_column = 'TIME'
+        # 關鍵修正：使用大小寫完全正確的 'Time' 欄位
+        time_column = 'Time' 
         if time_column not in df.columns: return None, f"YOKOGAWA Log中找不到 '{time_column}' 欄位"
         
-        # 處理 'HH:MM:SS' 或 'HH:MM:SS.ms' 格式的時間字串
         time_series = pd.to_datetime(df[time_column].astype(str), errors='coerce').dt.time
         df['time_index'] = pd.to_timedelta(time_series.astype(str))
-
         df.dropna(subset=['time_index'], inplace=True)
+        
         start_time = df['time_index'].iloc[0]
         df['time_index'] = df['time_index'] - start_time
 
@@ -107,7 +106,7 @@ def generate_flexible_chart(df, left_col, right_col, x_limits):
 st.set_page_config(layout="wide"); st.title("通用數據分析平台")
 st.sidebar.header("控制面板")
 uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['csv', 'xlsx'], accept_multiple_files=True)
-st.sidebar.info("支援 PTAT Log (*.csv) 和 YOKOGAWA MV1000/2000 (*.csv, *.xlsx) 兩種日誌格式。")
+st.sidebar.info("支援 PTAT Log (*.csv) 和 YOKOGAWA (*.csv, *.xlsx) 兩種日誌格式。")
 
 if uploaded_files:
     all_dfs = []; log_types_detected = []
