@@ -1,9 +1,22 @@
-# universal_analysis_platform_v7_3_improved.py
+# universal_analysis_platform_v8_0_enhanced.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
 import re
+from datetime import datetime
+
+# --- 版本資訊設定 ---
+VERSION = "v8.0"
+VERSION_DATE = "2025年6月"
+VERSION_FEATURES = [
+    "🎨 全新美化界面設計",
+    "📊 優化圖表大小與顯示比例",
+    "📋 改進統計表格布局",
+    "🔧 增強YOKOGAWA Excel智能解析",
+    "⚡ 提升PTAT Log處理效能",
+    "🎯 新增Y軸範圍自定義功能"
+]
 
 # --- 子模組：PTAT Log 解析器 (靜默版) ---
 def parse_ptat(file_content):
@@ -376,7 +389,8 @@ def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
     if df_chart.empty:
         return None
     
-    fig, ax = plt.subplots(figsize=(12, 8))
+    # 🎨 縮小圖表大小 15%
+    fig, ax = plt.subplots(figsize=(10.2, 6.8))  # 原本 (12, 8) 縮小 15%
     
     numeric_cols = df_chart.select_dtypes(include=['number']).columns
     cols_to_plot = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
@@ -392,17 +406,17 @@ def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
         if not y_data.isna().all():
             ax.plot(df_chart.index.total_seconds(), y_data, label=col, linewidth=1)
         
-    ax.set_title("YOKOGAWA All Channel Temperature Plot", fontsize=16)
-    ax.set_xlabel("Elapsed Time (seconds)", fontsize=12)
-    ax.set_ylabel("Temperature (°C)", fontsize=12)
-    ax.grid(True, linestyle='--', linewidth=0.5)
-    ax.legend(title="Channels", bbox_to_anchor=(1.04, 1), loc="upper left", fontsize=8)
+    ax.set_title("YOKOGAWA All Channel Temperature Plot", fontsize=14, fontweight='bold')
+    ax.set_xlabel("Elapsed Time (seconds)", fontsize=11)
+    ax.set_ylabel("Temperature (°C)", fontsize=11)
+    ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+    ax.legend(title="Channels", bbox_to_anchor=(1.04, 1), loc="upper left", fontsize=7)
     
     # 套用X軸範圍
     if x_limits:
         ax.set_xlim(x_limits)
     
-    # 🔥 新增：套用Y軸範圍
+    # 套用Y軸範圍
     if y_limits:
         ax.set_ylim(y_limits)
     
@@ -412,38 +426,142 @@ def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
 def generate_flexible_chart(df, left_col, right_col, x_limits, y_limits=None):
     if df is None or not left_col or left_col not in df.columns: return None
     if right_col and right_col != 'None' and right_col not in df.columns: return None
+    
     df_chart = df.copy()
     if x_limits:
         x_min_td, x_max_td = pd.to_timedelta(x_limits[0], unit='s'), pd.to_timedelta(x_limits[1], unit='s')
         df_chart = df_chart[(df_chart.index >= x_min_td) & (df_chart.index <= x_max_td)]
     if df_chart.empty: return None
+    
     df_chart.loc[:, 'left_val'] = pd.to_numeric(df_chart[left_col], errors='coerce')
     if right_col and right_col != 'None':
         df_chart.loc[:, 'right_val'] = pd.to_numeric(df_chart[right_col], errors='coerce')
-    fig, ax1 = plt.subplots(figsize=(12, 6)); plt.title(f'{left_col} {"& " + right_col if right_col and right_col != "None" else ""}', fontsize=16)
+    
+    # 🎨 縮小圖表大小 15%
+    fig, ax1 = plt.subplots(figsize=(10.2, 5.1))  # 原本 (12, 6) 縮小 15%
+    plt.title(f'{left_col} {"& " + right_col if right_col and right_col != "None" else ""}', fontsize=14, fontweight='bold')
+    
     x_axis_seconds = df_chart.index.total_seconds()
-    color = 'tab:blue'; ax1.set_xlabel('Elapsed Time (seconds)', fontsize=12); ax1.set_ylabel(left_col, color=color, fontsize=12)
-    ax1.plot(x_axis_seconds, df_chart['left_val'], color=color); ax1.tick_params(axis='y', labelcolor=color); ax1.grid(True, linestyle='--', linewidth=0.5)
+    color = 'tab:blue'
+    ax1.set_xlabel('Elapsed Time (seconds)', fontsize=11)
+    ax1.set_ylabel(left_col, color=color, fontsize=11)
+    ax1.plot(x_axis_seconds, df_chart['left_val'], color=color, linewidth=1.5)
+    ax1.tick_params(axis='y', labelcolor=color)
+    ax1.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
     
     # 套用Y軸範圍（左軸）
     if y_limits:
         ax1.set_ylim(y_limits)
     
     if right_col and right_col != 'None':
-        ax2 = ax1.twinx(); color = 'tab:red'
-        ax2.set_ylabel(right_col, color=color, fontsize=12); ax2.plot(x_axis_seconds, df_chart['right_val'], color=color)
+        ax2 = ax1.twinx()
+        color = 'tab:red'
+        ax2.set_ylabel(right_col, color=color, fontsize=11)
+        ax2.plot(x_axis_seconds, df_chart['right_val'], color=color, linewidth=1.5)
         ax2.tick_params(axis='y', labelcolor=color)
-    if x_limits: ax1.set_xlim(x_limits)
+    
+    if x_limits: 
+        ax1.set_xlim(x_limits)
+    
     fig.tight_layout()
     return fig
 
+# --- 版本資訊顯示函式 ---
+def display_version_info():
+    """顯示版本資訊"""
+    with st.expander("📋 版本資訊", expanded=False):
+        st.markdown(f"""
+        **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
+        
+        ### 🆕 本版本更新內容：
+        """)
+        
+        for feature in VERSION_FEATURES:
+            st.markdown(f"- {feature}")
+        
+        st.markdown("---")
+        st.markdown("💡 **使用提示：** 支援YOKOGAWA Excel格式、PTAT CSV格式，提供智能解析與多維度統計分析")
+
 # --- Streamlit 網頁應用程式介面 ---
-st.set_page_config(layout="wide")
-st.title("通用數據分析平台 - 改進版")
-st.sidebar.header("控制面板")
-uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['csv', 'xlsx'], accept_multiple_files=True)
+st.set_page_config(
+    page_title="通用數據分析平台",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
+
+# 🎨 自定義CSS樣式
+st.markdown("""
+<style>
+    .main-header {
+        background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+        padding: 1.5rem;
+        border-radius: 10px;
+        margin-bottom: 2rem;
+        text-align: center;
+        color: white;
+    }
+    .metric-card {
+        background-color: #f8f9fa;
+        padding: 1rem;
+        border-radius: 8px;
+        border-left: 4px solid #667eea;
+        margin: 0.5rem 0;
+    }
+    .success-box {
+        background-color: #d4edda;
+        border: 1px solid #c3e6cb;
+        color: #155724;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    .info-box {
+        background-color: #d1ecf1;
+        border: 1px solid #bee5eb;
+        color: #0c5460;
+        padding: 1rem;
+        border-radius: 8px;
+        margin: 1rem 0;
+    }
+    .stDataFrame {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# 🏠 主頁面標題
+st.markdown("""
+<div class="main-header">
+    <h1>📊 通用數據分析平台</h1>
+    <p>智能解析 YOKOGAWA & PTAT Log 文件，提供專業級數據分析與視覺化</p>
+</div>
+""", unsafe_allow_html=True)
+
+# 🔖 版本資訊區域
+display_version_info()
+
+# 📋 側邊欄設計
+st.sidebar.markdown("### 🎛️ 控制面板")
+st.sidebar.markdown("---")
+
+uploaded_files = st.sidebar.file_uploader(
+    "📁 上傳Log File (可多選)", 
+    type=['csv', 'xlsx'], 
+    accept_multiple_files=True,
+    help="支援 YOKOGAWA Excel 格式和 PTAT CSV 格式"
+)
 
 if uploaded_files:
+    # 📁 檔案資訊顯示
+    st.sidebar.markdown("### 📂 已上傳檔案")
+    for i, file in enumerate(uploaded_files, 1):
+        file_size = len(file.getvalue()) / 1024  # KB
+        st.sidebar.markdown(f"**{i}.** `{file.name}` ({file_size:.1f} KB)")
+    
+    st.sidebar.markdown("---")
+    
     # 🔥 靜默檢測檔案類型
     if len(uploaded_files) == 1:
         df_check, log_type_check = parse_dispatcher(uploaded_files[0])
@@ -453,18 +571,27 @@ if uploaded_files:
 
     # --- YOKOGAWA 專屬顯示模式 ---
     if is_single_yokogawa:
-        st.sidebar.success(f"檔案: {uploaded_files[0].name}")
+        # 📊 狀態顯示
+        st.markdown(f"""
+        <div class="success-box">
+            <strong>✅ 檔案解析成功</strong><br>
+            📄 檔案類型：{log_type_check}<br>
+            📊 數據筆數：{len(df_check):,} 筆<br>
+            🔢 通道數量：{len([c for c in df_check.columns if df_check[c].dtype in ['float64', 'int64']]):,} 個
+        </div>
+        """, unsafe_allow_html=True)
         
-        # YOKOGAWA 圖表設定
-        st.sidebar.header("圖表設定")
+        # 🎛️ YOKOGAWA 圖表設定
+        st.sidebar.markdown("### ⚙️ 圖表設定")
+        
         if df_check is not None and len(df_check) > 0:
-            # 時間範圍設定
+            # ⏱️ 時間範圍設定
             x_min_val = df_check.index.min().total_seconds()
             x_max_val = df_check.index.max().total_seconds()
             
             if x_min_val < x_max_val:
                 x_min, x_max = st.sidebar.slider(
-                    "時間範圍 (秒)", 
+                    "⏱️ 時間範圍 (秒)", 
                     float(x_min_val), 
                     float(x_max_val), 
                     (float(x_min_val), float(x_max_val)),
@@ -474,8 +601,8 @@ if uploaded_files:
             else:
                 x_limits = None
             
-            # 🔥 新增：Y軸溫度範圍設定
-            st.sidebar.subheader("Y軸溫度範圍設定")
+            # 🎯 Y軸溫度範圍設定
+            st.sidebar.markdown("#### 🎯 Y軸溫度範圍")
             
             # 計算當前時間範圍內的溫度範圍
             df_temp = df_check.copy()
@@ -501,11 +628,11 @@ if uploaded_files:
                         temp_range = temp_max - temp_min
                         buffer = temp_range * 0.1 if temp_range > 0 else 5
                         
-                        auto_y_range = st.sidebar.checkbox("自動Y軸範圍", value=True)
+                        auto_y_range = st.sidebar.checkbox("🔄 自動Y軸範圍", value=True)
                         
                         if not auto_y_range:
                             y_min, y_max = st.sidebar.slider(
-                                "溫度範圍 (°C)",
+                                "🌡️ 溫度範圍 (°C)",
                                 temp_min - buffer,
                                 temp_max + buffer,
                                 (temp_min - buffer, temp_max + buffer),
@@ -515,6 +642,14 @@ if uploaded_files:
                             y_limits = (y_min, y_max)
                         else:
                             y_limits = None
+                            
+                        # 📊 溫度範圍資訊顯示
+                        st.sidebar.markdown(f"""
+                        **📈 當前溫度範圍：**
+                        - 最高：{temp_max:.1f}°C
+                        - 最低：{temp_min:.1f}°C
+                        - 差值：{temp_range:.1f}°C
+                        """)
                     else:
                         y_limits = None
                 else:
@@ -525,33 +660,57 @@ if uploaded_files:
             x_limits = None
             y_limits = None
         
-        # 顯示圖表
-        st.header("YOKOGAWA 全通道溫度曲線圖")
+        # 🏠 主要內容區域
+        col1, col2 = st.columns([2, 1])
         
-        if df_check is not None:
-            # 顯示數據概況（簡化版）
-            st.write(f"📊 數據記錄：{len(df_check)} 筆，通道數：{len([c for c in df_check.columns if df_check[c].dtype in ['float64', 'int64']])} 個")
+        with col1:
+            st.markdown("### 📈 YOKOGAWA 全通道溫度曲線圖")
             
-            # 生成圖表
-            fig = generate_yokogawa_temp_chart(df_check, x_limits, y_limits)
-            if fig: 
-                st.pyplot(fig)
+            if df_check is not None:
+                # 生成圖表
+                fig = generate_yokogawa_temp_chart(df_check, x_limits, y_limits)
+                if fig: 
+                    st.pyplot(fig)
+                else: 
+                    st.warning("⚠️ 無法產生溫度圖表")
+            else:
+                st.error("❌ 數據解析失敗")
+        
+        with col2:
+            st.markdown("### 📊 統計數據")
+            stats_df = calculate_temp_stats(df_check, x_limits)
+            if not stats_df.empty:
+                st.dataframe(stats_df, use_container_width=True, hide_index=True)
                 
-                # 🔥 新增：顯示統計表格
-                st.subheader("溫度統計數據")
-                stats_df = calculate_temp_stats(df_check, x_limits)
-                if not stats_df.empty:
-                    st.dataframe(stats_df, use_container_width=True)
-                else:
-                    st.write("無統計數據可顯示")
-            else: 
-                st.warning("無法產生溫度圖表")
-        else:
-            st.error("數據解析失敗")
+                # 📈 快速統計摘要
+                if len(stats_df) > 0:
+                    try:
+                        max_temps = [float(x.replace('°C', '')) for x in stats_df['Tmax (°C)'] if x != 'N/A']
+                        avg_temps = [float(x.replace('°C', '')) for x in stats_df['Tavg (°C)'] if x != 'N/A']
+                        
+                        if max_temps and avg_temps:
+                            st.markdown(f"""
+                            <div class="metric-card">
+                                <strong>🔥 整體最高溫：</strong> {max(max_temps):.1f}°C<br>
+                                <strong>📊 平均溫度：</strong> {sum(avg_temps)/len(avg_temps):.1f}°C<br>
+                                <strong>📈 活躍通道：</strong> {len(stats_df)} 個
+                            </div>
+                            """, unsafe_allow_html=True)
+                    except:
+                        pass
+            else:
+                st.markdown("""
+                <div class="info-box">
+                    ❓ 無統計數據可顯示<br>
+                    請檢查時間範圍設定
+                </div>
+                """, unsafe_allow_html=True)
 
     # --- 通用互動式分析模式 ---
     else:
-        all_dfs = []; log_types = []
+        all_dfs = []
+        log_types = []
+        
         for file in uploaded_files:
             df, log_type = parse_dispatcher(file)
             if df is not None:
@@ -559,23 +718,45 @@ if uploaded_files:
                 log_types.append(log_type)
         
         if all_dfs:
+            # 📊 檔案解析狀態
+            st.markdown("### 📋 檔案解析狀態")
+            status_cols = st.columns(len(uploaded_files))
+            
+            for i, (file, log_type) in enumerate(zip(uploaded_files, log_types)):
+                with status_cols[i]:
+                    if i < len(all_dfs):
+                        st.markdown(f"""
+                        <div class="success-box">
+                            <strong>✅ {file.name}</strong><br>
+                            📄 {log_type}<br>
+                            📊 {len(all_dfs[i]):,} 筆數據
+                        </div>
+                        """, unsafe_allow_html=True)
+                    else:
+                        st.markdown(f"""
+                        <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 1rem; border-radius: 8px;">
+                            <strong>❌ {file.name}</strong><br>
+                            解析失敗
+                        </div>
+                        """, unsafe_allow_html=True)
+            
             # 檢查是否有PTAT Log
             has_ptat = any("PTAT" in log_type for log_type in log_types)
             
             if has_ptat and len(all_dfs) == 1:
-                # 單一PTAT Log的特殊處理
+                # 🔬 單一PTAT Log的特殊處理
                 ptat_df = all_dfs[0]
                 
-                st.sidebar.header("PTAT 圖表設定")
+                st.sidebar.markdown("### ⚙️ PTAT 圖表設定")
                 
-                # 時間範圍設定
+                # ⏱️ 時間範圍設定
                 if len(ptat_df) > 0:
                     x_min_val = ptat_df.index.min().total_seconds()
                     x_max_val = ptat_df.index.max().total_seconds()
                     
                     if x_min_val < x_max_val:
                         x_min, x_max = st.sidebar.slider(
-                            "時間範圍 (秒)", 
+                            "⏱️ 時間範圍 (秒)", 
                             float(x_min_val), 
                             float(x_max_val), 
                             (float(x_min_val), float(x_max_val)),
@@ -587,13 +768,18 @@ if uploaded_files:
                 else:
                     x_limits = None
                 
-                # 變數選擇
+                # 🎯 變數選擇
                 numeric_columns = ptat_df.select_dtypes(include=['number']).columns.tolist()
                 if numeric_columns:
+                    st.sidebar.markdown("#### 🎯 參數選擇")
+                    
                     default_left_list = [c for c in numeric_columns if 'Temp' in c or 'temperature' in c.lower()]
                     default_left = default_left_list[0] if default_left_list else numeric_columns[0]
-                    left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, 
-                                                     index=numeric_columns.index(default_left) if default_left in numeric_columns else 0)
+                    left_y_axis = st.sidebar.selectbox(
+                        "📈 左側Y軸變數", 
+                        options=numeric_columns, 
+                        index=numeric_columns.index(default_left) if default_left in numeric_columns else 0
+                    )
                     
                     right_y_axis_options = ['None'] + numeric_columns
                     default_right_list = [c for c in numeric_columns if 'Power' in c or 'power' in c.lower()]
@@ -602,11 +788,17 @@ if uploaded_files:
                         default_right_index = right_y_axis_options.index(default_right)
                     except ValueError: 
                         default_right_index = 0
-                    right_y_axis = st.sidebar.selectbox("選擇右側Y軸變數 (可不選)", options=right_y_axis_options, index=default_right_index)
+                    right_y_axis = st.sidebar.selectbox(
+                        "📊 右側Y軸變數 (可選)", 
+                        options=right_y_axis_options, 
+                        index=default_right_index
+                    )
                     
-                    # Y軸範圍設定
-                    auto_y = st.sidebar.checkbox("自動Y軸範圍", value=True)
+                    # 🎚️ Y軸範圍設定
+                    st.sidebar.markdown("#### 🎚️ Y軸範圍")
+                    auto_y = st.sidebar.checkbox("🔄 自動Y軸範圍", value=True)
                     y_limits = None
+                    
                     if not auto_y and left_y_axis:
                         left_data = pd.to_numeric(ptat_df[left_y_axis], errors='coerce').dropna()
                         if len(left_data) > 0:
@@ -614,7 +806,7 @@ if uploaded_files:
                             data_range = data_max - data_min
                             buffer = data_range * 0.1 if data_range > 0 else 1
                             y_min, y_max = st.sidebar.slider(
-                                f"{left_y_axis} 範圍",
+                                f"📊 {left_y_axis} 範圍",
                                 data_min - buffer,
                                 data_max + buffer,
                                 (data_min - buffer, data_max + buffer),
@@ -622,78 +814,109 @@ if uploaded_files:
                             )
                             y_limits = (y_min, y_max)
                     
-                    # 顯示圖表
-                    st.header("PTAT Log 數據分析")
-                    st.write(f"📊 數據記錄：{len(ptat_df)} 筆，參數數：{len(numeric_columns)} 個")
+                    # 🏠 主要內容區域
+                    st.markdown("### 🔬 PTAT Log 數據分析")
                     
+                    # 📈 圖表顯示
                     fig = generate_flexible_chart(ptat_df, left_y_axis, right_y_axis, x_limits, y_limits)
                     if fig: 
-                        st.pyplot(fig)
+                        st.pyplot(fig, use_container_width=True)
                         
-                        # 🔥 新增：PTAT Log 專用統計表格
-                        st.subheader("PTAT Log 統計分析")
+                        # 📊 PTAT Log 專用統計表格
+                        st.markdown("### 📊 PTAT Log 統計分析")
                         
                         freq_df, power_df, temp_df = calculate_ptat_stats(ptat_df, x_limits)
                         
-                        # 使用分欄布局顯示三個表格
+                        # 使用美化的分欄布局顯示三個表格
                         col1, col2, col3 = st.columns(3)
                         
                         with col1:
-                            st.write("**CPU Core Frequency 統計**")
+                            st.markdown("#### 🖥️ CPU Core Frequency")
                             if freq_df is not None and not freq_df.empty:
                                 st.dataframe(freq_df, use_container_width=True, hide_index=True)
                             else:
-                                st.write("未找到CPU頻率數據")
+                                st.markdown("""
+                                <div class="info-box">
+                                    ❓ 未找到CPU頻率數據
+                                </div>
+                                """, unsafe_allow_html=True)
                         
                         with col2:
-                            st.write("**Package Power 統計**")
+                            st.markdown("#### ⚡ Package Power")
                             if power_df is not None and not power_df.empty:
                                 st.dataframe(power_df, use_container_width=True, hide_index=True)
                             else:
-                                st.write("未找到Package Power數據")
+                                st.markdown("""
+                                <div class="info-box">
+                                    ❓ 未找到Package Power數據
+                                </div>
+                                """, unsafe_allow_html=True)
                         
                         with col3:
-                            st.write("**MSR Package Temperature 統計**")
+                            st.markdown("#### 🌡️ MSR Package Temp")
                             if temp_df is not None and not temp_df.empty:
                                 st.dataframe(temp_df, use_container_width=True, hide_index=True)
                             else:
-                                st.write("未找到MSR Package Temperature數據")
+                                st.markdown("""
+                                <div class="info-box">
+                                    ❓ 未找到MSR Package Temperature數據
+                                </div>
+                                """, unsafe_allow_html=True)
                     else:
-                        st.warning("無法產生圖表")
+                        st.warning("⚠️ 無法產生圖表")
                 else:
-                    st.warning("無可用的數值型數據")
+                    st.warning("⚠️ 無可用的數值型數據")
             
             else:
-                # 多檔案混合分析模式
-                master_df = pd.concat(all_dfs); 
+                # 🔀 多檔案混合分析模式
+                master_df = pd.concat(all_dfs)
                 master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean(numeric_only=True).interpolate(method='linear')
                 numeric_columns = master_df_resampled.columns.tolist()
 
                 if numeric_columns:
-                    st.sidebar.header("圖表設定")
+                    st.sidebar.markdown("### ⚙️ 圖表設定")
+                    
+                    # 🎯 變數選擇
                     default_left_list = [c for c in numeric_columns if 'Temp' in c or 'T_' in c or 'CPU' in c]
                     default_left = default_left_list[0] if default_left_list else numeric_columns[0]
-                    left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, index=numeric_columns.index(default_left) if default_left in numeric_columns else 0)
+                    left_y_axis = st.sidebar.selectbox(
+                        "📈 左側Y軸變數", 
+                        options=numeric_columns, 
+                        index=numeric_columns.index(default_left) if default_left in numeric_columns else 0
+                    )
+                    
                     right_y_axis_options = ['None'] + numeric_columns
                     default_right_index = 0
                     if len(numeric_columns) > 1:
                         default_right_list = [c for c in numeric_columns if 'Power' in c or 'Watt' in c or 'P_' in c]
                         default_right = default_right_list[0] if default_right_list else 'None'
-                        try: default_right_index = right_y_axis_options.index(default_right)
-                        except ValueError: default_right_index = 1
-                    right_y_axis = st.sidebar.selectbox("選擇右側Y軸變數 (可不選)", options=right_y_axis_options, index=default_right_index)
+                        try: 
+                            default_right_index = right_y_axis_options.index(default_right)
+                        except ValueError: 
+                            default_right_index = 1
+                    right_y_axis = st.sidebar.selectbox(
+                        "📊 右側Y軸變數 (可選)", 
+                        options=right_y_axis_options, 
+                        index=default_right_index
+                    )
                     
-                    # X軸和Y軸範圍設定
-                    st.sidebar.header("軸範圍設定")
+                    # 🎚️ X軸和Y軸範圍設定
+                    st.sidebar.markdown("#### 🎚️ 軸範圍設定")
                     x_min_val = master_df_resampled.index.min().total_seconds()
                     x_max_val = master_df_resampled.index.max().total_seconds()
+                    
                     if x_min_val < x_max_val:
-                        x_min, x_max = st.sidebar.slider("時間範圍 (秒)", x_min_val, x_max_val, (x_min_val, x_max_val))
+                        x_min, x_max = st.sidebar.slider(
+                            "⏱️ 時間範圍 (秒)", 
+                            x_min_val, 
+                            x_max_val, 
+                            (x_min_val, x_max_val)
+                        )
                     else:
                         x_min, x_max = x_min_val, x_max_val
                     
                     # Y軸範圍設定
-                    auto_y = st.sidebar.checkbox("自動Y軸範圍", value=True)
+                    auto_y = st.sidebar.checkbox("🔄 自動Y軸範圍", value=True)
                     y_limits = None
                     if not auto_y and left_y_axis:
                         left_data = pd.to_numeric(master_df_resampled[left_y_axis], errors='coerce').dropna()
@@ -702,7 +925,7 @@ if uploaded_files:
                             data_range = data_max - data_min
                             buffer = data_range * 0.1 if data_range > 0 else 1
                             y_min, y_max = st.sidebar.slider(
-                                f"{left_y_axis} 範圍",
+                                f"📊 {left_y_axis} 範圍",
                                 data_min - buffer,
                                 data_max + buffer,
                                 (data_min - buffer, data_max + buffer),
@@ -710,12 +933,65 @@ if uploaded_files:
                             )
                             y_limits = (y_min, y_max)
                     
-                    st.header("動態比較圖表")
+                    # 🏠 主要內容
+                    st.markdown("### 🔀 動態比較圖表")
+                    
                     fig = generate_flexible_chart(master_df_resampled, left_y_axis, right_y_axis, (x_min, x_max), y_limits)
-                    if fig: st.pyplot(fig)
+                    if fig: 
+                        st.pyplot(fig, use_container_width=True)
+                    else:
+                        st.warning("⚠️ 無法產生圖表")
                 else:
-                    st.warning("無可用的數值型數據進行繪圖")
+                    st.warning("⚠️ 無可用的數值型數據進行繪圖")
         else:
-            st.error("所有檔案解析失敗")
+            st.markdown("""
+            <div style="background-color: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; padding: 2rem; border-radius: 10px; text-align: center;">
+                <h3>❌ 所有檔案解析失敗</h3>
+                <p>請檢查檔案格式是否正確，或聯繫技術支援</p>
+            </div>
+            """, unsafe_allow_html=True)
 else:
-    st.sidebar.info("請上傳您的 Log File(s) 開始分析")
+    # 🏠 歡迎頁面
+    st.markdown("""
+    <div class="info-box">
+        <h3>🚀 開始使用</h3>
+        <p><strong>請在左側上傳您的 Log 文件開始分析</strong></p>
+        
+        <h4>📋 支援格式</h4>
+        <ul>
+            <li><strong>YOKOGAWA Excel (.xlsx)</strong> - 自動識別CH編號與Tag標籤</li>
+            <li><strong>PTAT CSV (.csv)</strong> - CPU溫度、頻率、功耗分析</li>
+        </ul>
+        
+        <h4>✨ 主要功能</h4>
+        <ul>
+            <li>🎯 智能檔案格式識別</li>
+            <li>📊 即時數據統計分析</li>
+            <li>📈 動態圖表與範圍調整</li>
+            <li>🔄 多檔案混合比較</li>
+        </ul>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # 📞 支援資訊
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("""
+    ### 📞 技術支援
+    
+    **需要幫助嗎？**
+    - 📧 Email: support@example.com
+    - 📱 Tel: +886-xxx-xxxx
+    - 💬 即時聊天: 點擊右下角
+    
+    **📚 使用說明**
+    - [📖 用戶手冊](https://example.com/manual)
+    - [🎥 教學影片](https://example.com/videos)
+    """)
+
+# 🔚 頁面底部
+st.markdown("---")
+st.markdown(f"""
+<div style="text-align: center; color: #666; font-size: 0.9em; padding: 1rem;">
+    📊 通用數據分析平台 {VERSION} | 由 Streamlit 驅動 | © 2025 版權所有
+</div>
+""", unsafe_allow_html=True)
