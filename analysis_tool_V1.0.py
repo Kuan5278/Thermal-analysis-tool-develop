@@ -615,7 +615,7 @@ def main():
                 if "📈 趨勢分析" in ai_features:
                     st.markdown("#### 📈 趨勢分析")
                     
-                    trend_columns = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME', # universal_analysis_platform_v8_5_ai_ready.py
+                    trend_columns = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME', 'anomaly_score']]
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
