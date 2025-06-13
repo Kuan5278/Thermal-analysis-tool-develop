@@ -1,4 +1,4 @@
-# universal_analysis_platform_v3_final.py
+# universal_analysis_platform_v4_final.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -29,13 +29,16 @@ def parse_ptat(file_content):
     except Exception as e:
         return None, f"解析PTAT Log時出錯: {e}"
 
-# --- 子模組：YOKOGAWA Log 解析器 ---
+# --- 子模組：YOKOGAWA Log 解析器 (最終修正版) ---
 def parse_yokogawa(file_content, is_excel=False):
     try:
-        read_func = pd.read_excel if is_excel else pd.read_csv
-        df = read_func(file_content, header=28, thousands=',', low_memory=False) # 第29行是標題
+        # 關鍵修正：將 read_func 分開呼叫，以移除不相容的參數
+        if is_excel:
+            df = pd.read_excel(file_content, header=28)
+        else:
+            df = pd.read_csv(file_content, header=28, thousands=',', low_memory=False)
+            
         df.columns = df.columns.str.strip()
-
         time_column = 'RT'
         if time_column not in df.columns: return None, f"YOKOGAWA Log中找不到 '{time_column}' 欄位"
         
@@ -51,42 +54,36 @@ def parse_yokogawa(file_content, is_excel=False):
     except Exception as e:
         return None, f"解析YOKOGAWA Log時出錯: {e}"
 
-# --- 主模組：解析器調度中心 (智慧辨識版) ---
+# --- 主模組：解析器調度中心 ---
 def parse_dispatcher(uploaded_file):
     filename = uploaded_file.name
     file_content = io.BytesIO(uploaded_file.getvalue())
     is_excel = '.xlsx' in filename.lower()
     
     try:
-        # 方法一：基於 Device Type 的YOKOGAWA檔案嗅探 (最可靠)
-        read_func = pd.read_excel if is_excel else pd.read_csv
-        # 讀取元數據區域來尋找 Device Type
-        df_sniff = read_func(file_content, header=None, skiprows=1, nrows=10) # 讀取前10行元數據
-        file_content.seek(0)
-        for index, row in df_sniff.iterrows():
-            row_str = ' '.join(row.dropna().astype(str))
-            if 'Device Type' in row_str and ('MV1000' in row_str or 'MV2000' in row_str):
-                return parse_yokogawa(file_content, is_excel)
-
-        # 方法二：如果方法一失敗，則用PTAT的特徵來嗅探
-        first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(5)])
-        file_content.seek(0)
-        if 'MSR Package Temperature' in first_lines_text:
-            return parse_ptat(file_content)
-
+        if is_excel:
+            df_sniff_ch = pd.read_excel(file_content, header=None, skiprows=27, nrows=1)
+            file_content.seek(0)
+            if 'CH001' in str(df_sniff_ch.iloc[0, 0]):
+                return parse_yokogawa(file_content, is_excel=True)
+        else: # CSV
+            first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(30)])
+            file_content.seek(0)
+            if 'MSR Package Temperature' in first_lines_text:
+                return parse_ptat(file_content)
+            elif 'CH001' in first_lines_text:
+                return parse_yokogawa(file_content, is_excel=False)
     except Exception:
-        pass # 如果嗅探過程出錯，就回傳未知
+        pass
             
     return None, "未知的Log檔案格式"
 
 # --- 圖表繪製函式 ---
 def generate_flexible_chart(df, left_col, right_col, x_limits):
-    # (此函式內容與前次相同，為求完整一併附上)
     if df is None or not left_col or left_col not in df.columns: return None
     if right_col and right_col != 'None' and right_col not in df.columns: return None
     
     df_chart = df.copy()
-    x_min_td, x_max_td = (None, None)
     if x_limits:
         x_min_td = pd.to_timedelta(x_limits[0], unit='s'); x_max_td = pd.to_timedelta(x_limits[1], unit='s')
         df_chart = df_chart[(df_chart.index >= x_min_td) & (df_chart.index <= x_max_td)]
@@ -129,14 +126,15 @@ if uploaded_files:
         for name in log_types_detected: st.sidebar.markdown(f"- `{name}`")
 
         master_df = pd.concat(all_dfs); 
-        master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean().interpolate(method='linear')
+        master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean(numeric_only=True).interpolate(method='linear')
         
         numeric_columns = master_df_resampled.columns.tolist()
         if numeric_columns:
             st.sidebar.header("圖表設定")
             default_left_list = [c for c in numeric_columns if 'Temp' in c]
             default_left = default_left_list[0] if default_left_list else numeric_columns[0]
-            left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, index=numeric_columns.index(default_left))
+            left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, index=numeric_columns.index(default_left) if default_left in numeric_columns else 0)
+            
             right_y_axis_options = ['None'] + numeric_columns
             default_right_index = 0
             if len(numeric_columns) > 1:
