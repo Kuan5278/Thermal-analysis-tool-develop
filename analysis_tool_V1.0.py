@@ -1,5 +1,5 @@
-# universal_analysis_platform_v8_5_final.py
-# 完整的數據分析平台 - 包含PTAT修復和美化界面
+# universal_analysis_platform_v8_5_final_fixed.py
+# 完整的數據分析平台 - 包含PTAT修復和美化界面 - PTAT統計表格垂直排列修正版
 
 import streamlit as st
 import pandas as pd
@@ -10,7 +10,7 @@ from datetime import datetime
 import numpy as np
 
 # 版本資訊
-VERSION = "v8.5 Final"
+VERSION = "v8.5 Final Fixed"
 VERSION_DATE = "2025年6月"
 
 # --- 子模組：PTAT Log 解析器 (修復版) ---
@@ -444,11 +444,12 @@ def display_version_info():
         ### 🆕 本版本更新內容：
         - 🎨 全新美化界面設計
         - 📊 優化圖表大小與顯示比例
-        - 📋 改進統計表格布局
+        - 📋 改進統計表格布局 (PTAT統計表格改為垂直排列)
         - 🔧 增強YOKOGAWA Excel智能解析
         - ⚡ 提升PTAT Log處理效能
         - 🎯 新增Y軸範圍自定義功能
         - 🛠️ 修復PTAT Log解析問題
+        - ✨ PTAT統計表格垂直排列，無需滾動查看完整數據
         
         ---
         💡 **使用提示：** 支援YOKOGAWA Excel格式、PTAT CSV格式，提供智能解析與多維度統計分析
@@ -787,46 +788,49 @@ def main():
                         if fig: 
                             st.pyplot(fig, use_container_width=True)
                             
-                            # PTAT Log 專用統計表格
+                            # PTAT Log 專用統計表格 - 垂直排列版本
                             st.markdown("### 📊 PTAT Log 統計分析")
                             
                             freq_df, power_df, temp_df = calculate_ptat_stats(ptat_df, x_limits)
                             
-                            # 使用美化的分欄布局顯示三個表格
-                            col1, col2, col3 = st.columns(3)
+                            # 🖥️ CPU Core Frequency 表格
+                            st.markdown("#### 🖥️ CPU Core Frequency")
+                            if freq_df is not None and not freq_df.empty:
+                                st.dataframe(freq_df, use_container_width=True, hide_index=True)
+                            else:
+                                st.markdown("""
+                                <div class="info-box">
+                                    ❓ 未找到CPU頻率數據
+                                </div>
+                                """, unsafe_allow_html=True)
                             
-                            with col1:
-                                st.markdown("#### 🖥️ CPU Core Frequency")
-                                if freq_df is not None and not freq_df.empty:
-                                    st.dataframe(freq_df, use_container_width=True, hide_index=True)
-                                else:
-                                    st.markdown("""
-                                    <div class="info-box">
-                                        ❓ 未找到CPU頻率數據
-                                    </div>
-                                    """, unsafe_allow_html=True)
+                            # 添加間距
+                            st.markdown("<br>", unsafe_allow_html=True)
                             
-                            with col2:
-                                st.markdown("#### ⚡ Package Power")
-                                if power_df is not None and not power_df.empty:
-                                    st.dataframe(power_df, use_container_width=True, hide_index=True)
-                                else:
-                                    st.markdown("""
-                                    <div class="info-box">
-                                        ❓ 未找到Package Power數據
-                                    </div>
-                                    """, unsafe_allow_html=True)
+                            # ⚡ Package Power 表格  
+                            st.markdown("#### ⚡ Package Power")
+                            if power_df is not None and not power_df.empty:
+                                st.dataframe(power_df, use_container_width=True, hide_index=True)
+                            else:
+                                st.markdown("""
+                                <div class="info-box">
+                                    ❓ 未找到Package Power數據
+                                </div>
+                                """, unsafe_allow_html=True)
                             
-                            with col3:
-                                st.markdown("#### 🌡️ MSR Package Temp")
-                                if temp_df is not None and not temp_df.empty:
-                                    st.dataframe(temp_df, use_container_width=True, hide_index=True)
-                                else:
-                                    st.markdown("""
-                                    <div class="info-box">
-                                        ❓ 未找到MSR Package Temperature數據
-                                    </div>
-                                    """, unsafe_allow_html=True)
+                            # 添加間距
+                            st.markdown("<br>", unsafe_allow_html=True)
+                            
+                            # 🌡️ MSR Package Temperature 表格
+                            st.markdown("#### 🌡️ MSR Package Temperature")
+                            if temp_df is not None and not temp_df.empty:
+                                st.dataframe(temp_df, use_container_width=True, hide_index=True)
+                            else:
+                                st.markdown("""
+                                <div class="info-box">
+                                    ❓ 未找到MSR Package Temperature數據
+                                </div>
+                                """, unsafe_allow_html=True)
                         else:
                             st.warning("⚠️ 無法產生圖表")
                     else:
