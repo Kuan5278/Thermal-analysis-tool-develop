@@ -1,33 +1,161 @@
-# final_diagnostic_tool.py
+# universal_analysis_platform_v6_final.py
 import streamlit as st
 import pandas as pd
+import matplotlib.pyplot as plt
 import io
+import re
 
-st.title("檔案結構最終檢視器")
-st.info("這個工具將顯示您上傳檔案的前30行原始文字，這將是解決問題的最後一步。")
-
-# 修正：同時支援 .csv 和 .xlsx
-uploaded_file = st.sidebar.file_uploader("請上傳有問題的 Log File", type=['csv', 'xlsx'])
-
-if uploaded_file is not None:
+# --- 子模組：PTAT Log 解析器 (穩定版) ---
+def parse_ptat(file_content):
     try:
-        st.success("檔案上傳成功！")
-        file_content = io.BytesIO(uploaded_file.getvalue())
-        is_excel = '.xlsx' in uploaded_file.name.lower()
-        
-        # 讀取前30行，不指定標頭
-        read_func = pd.read_excel if is_excel else pd.read_csv
-        df_raw = read_func(file_content, header=None, nrows=30)
-
-        st.write("---")
-        st.subheader("檔案前30行原始內容：")
-        
-        # 將DataFrame轉為純文字輸出
-        output_text = df_raw.to_string()
-        
-        st.code(output_text, language='text')
-        
-        st.warning("請點擊上方區塊右上角的『複製』按鈕，然後將所有內容貼上給我。")
-
+        df = pd.read_csv(file_content, header=0, thousands=',', low_memory=False)
+        df.columns = df.columns.str.strip()
+        time_column = 'Time'
+        if time_column not in df.columns: return None, f"PTAT Log中找不到 '{time_column}' 欄位"
+        time_series = df[time_column].astype(str).str.strip()
+        time_series_cleaned = time_series.str.replace(r':(\d{3})$', r'.\1', regex=True)
+        datetime_series = pd.to_datetime(time_series_cleaned, format='%H:%M:%S.%f', errors='coerce')
+        valid_times_mask = datetime_series.notna()
+        df = df[valid_times_mask].copy()
+        if df.empty: return None, "PTAT Log時間格式無法解析"
+        valid_datetimes = datetime_series[valid_times_mask]
+        df['time_index'] = valid_datetimes - valid_datetimes.iloc[0]
+        df = df.add_prefix('PTAT: ')
+        df.rename(columns={'PTAT: time_index': 'time_index'}, inplace=True)
+        return df.set_index('time_index'), "PTAT Log"
     except Exception as e:
-        st.error(f"讀取檔案時發生錯誤: {e}")
+        return None, f"解析PTAT Log時出錯: {e}"
+
+# --- 子模組：YOKOGAWA Log 解析器 (雙層標頭最終版) ---
+def parse_yokogawa(file_content, is_excel=False):
+    try:
+        read_func = pd.read_excel if is_excel else pd.read_csv
+        
+        # 1. 讀取第29行 (使用者Tag)
+        tag_row_29 = read_func(file_content, header=None, skiprows=28, nrows=1).iloc[0].astype(str).str.strip()
+        file_content.seek(0)
+        # 2. 讀取第30行 (主要標頭)
+        main_header_30 = read_func(file_content, header=None, skiprows=29, nrows=1).iloc[0].astype(str).str.strip()
+        file_content.seek(0)
+        
+        # 3. 智慧組合最終的標頭
+        # 前3個欄位使用第30行的標頭 (Date, Time, sec)
+        final_columns = main_header_30.tolist()[:3] 
+        # 從第4個欄位開始，使用第29行的Tag
+        final_columns.extend(tag_row_29.tolist()[3:])
+        
+        # 4. 讀取真正的數據 (從第31行開始)
+        df = read_func(file_content, header=None, skiprows=30)
+        
+        # 5. 手動指定標頭
+        df.columns = final_columns[:len(df.columns)]
+        df.columns = df.columns.str.strip()
+
+        # 6. 使用 'sec' 欄位作為時間
+        time_column = 'sec'
+        if time_column not in df.columns: return None, f"YOKOGAWA Log中找不到 '{time_column}' 欄位"
+        
+        df['time_index'] = pd.to_timedelta(pd.to_numeric(df[time_column], errors='coerce'), unit='s')
+        df.dropna(subset=['time_index'], inplace=True)
+        
+        start_time = df['time_index'].iloc[0]
+        df['time_index'] = df['time_index'] - start_time
+
+        df = df.add_prefix('YOKO: ')
+        df.rename(columns={'YOKO: time_index': 'time_index'}, inplace=True)
+        return df.set_index('time_index'), "YOKOGAWA Log"
+    except Exception as e:
+        return None, f"解析YOKOGAWA Log時出錯: {e}"
+
+# --- 主模組：解析器調度中心 (穩定版) ---
+def parse_dispatcher(uploaded_file):
+    filename = uploaded_file.name
+    file_content = io.BytesIO(uploaded_file.getvalue())
+    is_excel = '.xlsx' in filename.lower()
+    
+    try:
+        read_func = pd.read_excel if is_excel else pd.read_csv
+        # 嗅探YOKOGAWA: 檢查第28行是否有CHXXX格式
+        df_sniff_yoko = read_func(file_content, header=None, skiprows=27, nrows=1)
+        file_content.seek(0)
+        for cell in df_sniff_yoko.iloc[0]:
+            if isinstance(cell, str) and re.match(r'CH\d{3}', cell.strip()):
+                return parse_yokogawa(file_content, is_excel)
+
+        # 嗅探PTAT
+        if not is_excel:
+            first_lines_text = "".join([file_content.readline().decode('utf-8', errors='ignore') for _ in range(5)])
+            file_content.seek(0)
+            if 'MSR Package Temperature' in first_lines_text:
+                return parse_ptat(file_content)
+    except Exception as e:
+        return None, f"檔案嗅探失敗: {e}"
+            
+    return None, "未知的Log檔案格式"
+
+# --- 圖表繪製與UI函式 (保持不變) ---
+def generate_flexible_chart(df, left_col, right_col, x_limits):
+    if df is None or not left_col or left_col not in df.columns: return None
+    if right_col and right_col != 'None' and right_col not in df.columns: return None
+    df_chart = df.copy()
+    if x_limits:
+        x_min_td = pd.to_timedelta(x_limits[0], unit='s'); x_max_td = pd.to_timedelta(x_limits[1], unit='s')
+        df_chart = df_chart[(df_chart.index >= x_min_td) & (df_chart.index <= x_max_td)]
+    df_chart.loc[:, 'left_val'] = pd.to_numeric(df_chart[left_col], errors='coerce')
+    if right_col and right_col != 'None':
+        df_chart.loc[:, 'right_val'] = pd.to_numeric(df_chart[right_col], errors='coerce')
+    fig, ax1 = plt.subplots(figsize=(12, 6)); plt.title(f'{left_col} {"& " + right_col if right_col and right_col != "None" else ""}', fontsize=16)
+    x_axis_seconds = df_chart.index.total_seconds()
+    color = 'tab:blue'; ax1.set_xlabel('Elapsed Time (seconds)', fontsize=12); ax1.set_ylabel(left_col, color=color, fontsize=12)
+    ax1.plot(x_axis_seconds, df_chart['left_val'], color=color); ax1.tick_params(axis='y', labelcolor=color); ax1.grid(True, linestyle='--', linewidth=0.5)
+    if right_col and right_col != 'None':
+        ax2 = ax1.twinx(); color = 'tab:red'
+        ax2.set_ylabel(right_col, color=color, fontsize=12); ax2.plot(x_axis_seconds, df_chart['right_val'], color=color)
+        ax2.tick_params(axis='y', labelcolor=color)
+    if x_limits: ax1.set_xlim(x_limits)
+    fig.tight_layout()
+    return fig
+
+st.set_page_config(layout="wide"); st.title("通用數據分析平台")
+st.sidebar.header("控制面板")
+uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['csv', 'xlsx'], accept_multiple_files=True)
+st.sidebar.info("支援 PTAT Log (*.csv) 和 YOKOGAWA (*.csv, *.xlsx) 兩種日誌格式。")
+
+if uploaded_files:
+    all_dfs = []; log_types_detected = []
+    with st.spinner('正在解析所有Log檔案...'):
+        for file in uploaded_files:
+            df, log_type = parse_dispatcher(file)
+            if df is not None:
+                all_dfs.append(df); log_types_detected.append(f"{file.name} (辨識為: {log_type})")
+            else:
+                st.error(f"檔案 '{file.name}' 解析失敗: {log_type}")
+    if all_dfs:
+        st.sidebar.success("檔案解析完成！")
+        for name in log_types_detected: st.sidebar.markdown(f"- `{name}`")
+        master_df = pd.concat(all_dfs); 
+        master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean(numeric_only=True).interpolate(method='linear')
+        numeric_columns = master_df_resampled.columns.tolist()
+        if numeric_columns:
+            st.sidebar.header("圖表設定")
+            default_left_list = [c for c in numeric_columns if 'Temp' in c or 'T_' in c]
+            default_left = default_left_list[0] if default_left_list else numeric_columns[0]
+            left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, index=numeric_columns.index(default_left) if default_left in numeric_columns else 0)
+            right_y_axis_options = ['None'] + numeric_columns
+            default_right_index = 0
+            if len(numeric_columns) > 1:
+                default_right_list = [c for c in numeric_columns if 'Power' in c or 'Watt' in c or 'P_' in c]
+                default_right = default_right_list[0] if default_right_list else 'None'
+                try: default_right_index = right_y_axis_options.index(default_right)
+                except ValueError: default_right_index = 1
+            right_y_axis = st.sidebar.selectbox("選擇右側Y軸變數 (可不選)", options=right_y_axis_options, index=default_right_index)
+            st.sidebar.header("X軸範圍設定 (秒)")
+            x_min_val = master_df_resampled.index.min().total_seconds(); x_max_val = master_df_resampled.index.max().total_seconds()
+            x_min, x_max = st.sidebar.slider("選擇時間範圍", x_min_val, x_max_val, (x_min_val, x_max_val))
+            st.header("動態比較圖表")
+            fig = generate_flexible_chart(master_df_resampled, left_y_axis, right_y_axis, (x_min, x_max))
+            if fig: st.pyplot(fig)
+        else:
+            st.warning("所有檔案解析後，無可用的數值型數據進行繪圖。")
+else:
+    st.sidebar.info("請上傳您的 Log File(s) 開始分析。")
