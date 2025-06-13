@@ -1,7 +1,3 @@
-fig.tight_layout()
-    return fig
-
-# --- GPUMon專用圖表生成函式 ---
 def generate_gpumon_chart(df, left_col, right_col, x_limits, y_limits=None):
     """生成GPUMon專用圖表"""
     if df is None or not left_col or left_col not in df.columns: 
@@ -22,12 +18,11 @@ def generate_gpumon_chart(df, left_col, right_col, x_limits, y_limits=None):
     
     fig, ax1 = plt.subplots(figsize=(10.2, 5.1))
     
-    # 設定圖表標題
     title = f'GPUMon: {left_col.replace("GPU: ", "")} {"& " + right_col.replace("GPU: ", "") if right_col and right_col != "None" else ""}'
     plt.title(title, fontsize=14, fontweight='bold')
     
     x_axis_seconds = df_chart.index.total_seconds()
-    color = 'tab:orange'  # GPU用橙色
+    color = 'tab:orange'
     ax1.set_xlabel('Elapsed Time (seconds)', fontsize=11)
     ax1.set_ylabel(left_col.replace("GPU: ", ""), color=color, fontsize=11)
     ax1.plot(x_axis_seconds, df_chart['left_val'], color=color, linewidth=2)
@@ -39,7 +34,7 @@ def generate_gpumon_chart(df, left_col, right_col, x_limits, y_limits=None):
     
     if right_col and right_col != 'None':
         ax2 = ax1.twinx()
-        color = 'tab:green'  # 第二軸用綠色
+        color = 'tab:green'
         ax2.set_ylabel(right_col.replace("GPU: ", ""), color=color, fontsize=11)
         ax2.plot(x_axis_seconds, df_chart['right_val'], color=color, linewidth=2)
         ax2.tick_params(axis='y', labelcolor=color)
@@ -50,7 +45,6 @@ def generate_gpumon_chart(df, left_col, right_col, x_limits, y_limits=None):
     fig.tight_layout()
     return fig
 
-# --- 版本資訊顯示函式 ---
 def display_version_info():
     """顯示版本資訊"""
     with st.expander("📋 版本資訊", expanded=False):
@@ -76,7 +70,6 @@ def display_version_info():
         💡 **使用提示：** 支援YOKOGAWA Excel、PTAT CSV、GPUMon CSV格式，提供智能解析與多維度統計分析
         """)
 
-# --- 主應用程式 ---
 def main():
     """主程式"""
     st.set_page_config(
@@ -86,7 +79,6 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # 自定義CSS樣式
     st.markdown("""
     <style>
         .main-header {
@@ -135,7 +127,6 @@ def main():
     </style>
     """, unsafe_allow_html=True)
     
-    # 主頁面標題
     st.markdown(f"""
     <div class="main-header">
         <h1>🎮 GPU & 溫度數據分析平台</h1>
@@ -144,10 +135,8 @@ def main():
     </div>
     """, unsafe_allow_html=True)
     
-    # 版本資訊區域
     display_version_info()
     
-    # 側邊欄設計
     st.sidebar.markdown("### 🎛️ 控制面板")
     st.sidebar.markdown("---")
     
@@ -159,7 +148,6 @@ def main():
     )
     
     if uploaded_files:
-        # 檔案資訊顯示
         st.sidebar.markdown("### 📂 已上傳檔案")
         for i, file in enumerate(uploaded_files, 1):
             file_size = len(file.getvalue()) / 1024
@@ -167,7 +155,6 @@ def main():
         
         st.sidebar.markdown("---")
         
-        # 檔案解析
         if len(uploaded_files) == 1:
             df_check, log_type_check = parse_dispatcher(uploaded_files[0])
             is_single_yokogawa = (log_type_check == "YOKOGAWA Log")
@@ -176,7 +163,6 @@ def main():
             is_single_yokogawa = False
             is_single_gpumon = False
         
-        # YOKOGAWA 專屬顯示模式
         if is_single_yokogawa:
             st.markdown(f"""
             <div class="success-box">
@@ -187,7 +173,6 @@ def main():
             </div>
             """, unsafe_allow_html=True)
             
-            # 圖表設定
             st.sidebar.markdown("### ⚙️ 圖表設定")
             
             if df_check is not None and len(df_check) > 0:
@@ -206,7 +191,6 @@ def main():
                 else:
                     x_limits = None
                 
-                # Y軸範圍設定
                 st.sidebar.markdown("#### 🎯 Y軸溫度範圍")
                 df_temp = df_check.copy()
                 if x_limits:
@@ -259,7 +243,6 @@ def main():
                 x_limits = None
                 y_limits = None
             
-            # 主要內容區域 - YOKOGAWA 全寬度顯示
             st.markdown("### 📈 YOKOGAWA 全通道溫度曲線圖")
             
             if df_check is not None:
@@ -271,7 +254,6 @@ def main():
             else:
                 st.error("❌ 數據解析失敗")
             
-            # 統計數據移到圖表下方
             st.markdown("### 📊 統計數據")
             stats_df = calculate_temp_stats(df_check, x_limits)
             if not stats_df.empty:
@@ -300,7 +282,6 @@ def main():
                 </div>
                 """, unsafe_allow_html=True)
         
-        # GPUMon 專屬顯示模式
         elif is_single_gpumon:
             st.markdown(f"""
             <div class="gpumon-box">
@@ -313,7 +294,6 @@ def main():
             
             st.sidebar.markdown("### ⚙️ GPUMon 圖表設定")
             
-            # 時間範圍設定
             if len(df_check) > 0:
                 x_min_val = df_check.index.min().total_seconds()
                 x_max_val = df_check.index.max().total_seconds()
@@ -332,12 +312,10 @@ def main():
             else:
                 x_limits = None
             
-            # 變數選擇
             numeric_columns = df_check.select_dtypes(include=['number']).columns.tolist()
             if numeric_columns:
                 st.sidebar.markdown("#### 🎯 參數選擇")
                 
-                # 智能預設選擇
                 temp_cols = [c for c in numeric_columns if 'Temperature' in c and 'GPU' in c]
                 power_cols = [c for c in numeric_columns if 'Power' in c and ('NVVDD' in c or 'Total' in c)]
                 freq_cols = [c for c in numeric_columns if 'Clock' in c and 'GPC' in c]
@@ -357,7 +335,6 @@ def main():
                 right_y_axis_options = ['None'] + numeric_columns
                 default_right = 'None'
                 
-                # 智能配對建議
                 if 'Temperature' in left_y_axis and power_cols:
                     default_right = power_cols[0]
                 elif 'Power' in left_y_axis and temp_cols:
@@ -376,7 +353,6 @@ def main():
                     index=default_right_index
                 )
                 
-                # Y軸範圍設定
                 st.sidebar.markdown("#### 🎚️ Y軸範圍")
                 auto_y = st.sidebar.checkbox("🔄 自動Y軸範圍", value=True, key="gpumon_auto_y")
                 y_limits = None
@@ -397,20 +373,16 @@ def main():
                         )
                         y_limits = (y_min, y_max)
                 
-                # 主要內容區域
                 st.markdown("### 🎮 GPUMon 數據分析")
                 
-                # 圖表顯示
                 fig = generate_gpumon_chart(df_check, left_y_axis, right_y_axis, x_limits, y_limits)
                 if fig: 
                     st.pyplot(fig, use_container_width=True)
                     
-                    # GPUMon Log 專用統計表格 - 垂直排列版本
                     st.markdown("### 📊 GPUMon 統計分析")
                     
                     temp_df, power_df, freq_df, util_df = calculate_gpumon_stats(df_check, x_limits)
                     
-                    # 🌡️ GPU溫度統計
                     st.markdown("#### 🌡️ GPU溫度統計")
                     if temp_df is not None and not temp_df.empty:
                         st.dataframe(temp_df, use_container_width=True, hide_index=True)
@@ -421,10 +393,8 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 添加間距
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # ⚡ GPU功耗統計  
                     st.markdown("#### ⚡ GPU功耗統計")
                     if power_df is not None and not power_df.empty:
                         st.dataframe(power_df, use_container_width=True, hide_index=True)
@@ -435,10 +405,8 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 添加間距
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # 🔄 GPU頻率統計
                     st.markdown("#### 🔄 GPU頻率統計")
                     if freq_df is not None and not freq_df.empty:
                         st.dataframe(freq_df, use_container_width=True, hide_index=True)
@@ -449,10 +417,8 @@ def main():
                         </div>
                         """, unsafe_allow_html=True)
                     
-                    # 添加間距
                     st.markdown("<br>", unsafe_allow_html=True)
                     
-                    # 📊 GPU使用率統計
                     st.markdown("#### 📊 GPU使用率統計")
                     if util_df is not None and not util_df.empty:
                         st.dataframe(util_df, use_container_width=True, hide_index=True)
@@ -469,7 +435,6 @@ def main():
                 st.warning("⚠️ GPUMon Log中無可用的數值型數據")
         
         else:
-            # 處理PTAT或多檔案
             all_dfs = []
             log_types = []
             
@@ -480,14 +445,12 @@ def main():
                     log_types.append(log_type)
             
             if all_dfs:
-                # 檔案解析狀態
                 st.markdown("### 📋 檔案解析狀態")
                 status_cols = st.columns(len(uploaded_files))
                 
                 for i, (file, log_type) in enumerate(zip(uploaded_files, log_types)):
                     with status_cols[i]:
                         if i < len(all_dfs):
-                            # 根據log類型選擇不同的顯示樣式
                             if log_type == "GPUMon Log":
                                 st.markdown(f"""
                                 <div class="gpumon-box">
@@ -512,17 +475,14 @@ def main():
                             </div>
                             """, unsafe_allow_html=True)
                 
-                # 檢查是否有PTAT Log
                 has_ptat = any("PTAT" in log_type for log_type in log_types)
                 has_gpumon = any("GPUMon" in log_type for log_type in log_types)
                 
                 if has_ptat and len(all_dfs) == 1:
-                    # 單一PTAT Log的特殊處理
                     ptat_df = all_dfs[0]
                     
                     st.sidebar.markdown("### ⚙️ PTAT 圖表設定")
                     
-                    # 時間範圍設定
                     if len(ptat_df) > 0:
                         x_min_val = ptat_df.index.min().total_seconds()
                         x_max_val = ptat_df.index.max().total_seconds()
@@ -541,7 +501,6 @@ def main():
                     else:
                         x_limits = None
                     
-                    # 變數選擇
                     numeric_columns = ptat_df.select_dtypes(include=['number']).columns.tolist()
                     if numeric_columns:
                         st.sidebar.markdown("#### 🎯 參數選擇")
@@ -567,7 +526,6 @@ def main():
                             index=default_right_index
                         )
                         
-                        # Y軸範圍設定
                         st.sidebar.markdown("#### 🎚️ Y軸範圍")
                         auto_y = st.sidebar.checkbox("🔄 自動Y軸範圍", value=True)
                         y_limits = None
@@ -587,23 +545,16 @@ def main():
                                 )
                                 y_limits = (y_min, y_max)
                         
-                        # 主要內容區域
                         st.markdown("### 🔬 PTAT Log 數據分析")
                         
-                        # 圖表顯示
                         fig = generate_flexible_chart(ptat_df, left_y_axis, right_y_axis, x_limits, y_limits)
                         if fig: 
                             st.pyplot(fig, use_container_width=True)
                             
-                            # PTAT Log 專用統計表格 - 垂直排列版本
-                            st.markdown("### 📊 PTAT Log 統計分析")
-                            
-                            # PTAT Log 專用統計表格 - 垂直排列版本
                             st.markdown("### 📊 PTAT Log 統計分析")
                             
                             freq_df, power_df, temp_df = calculate_ptat_stats(ptat_df, x_limits)
                             
-                            # 🖥️ CPU Core Frequency 表格
                             st.markdown("#### 🖥️ CPU Core Frequency")
                             if freq_df is not None and not freq_df.empty:
                                 st.dataframe(freq_df, use_container_width=True, hide_index=True)
@@ -614,10 +565,8 @@ def main():
                                 </div>
                                 """, unsafe_allow_html=True)
                             
-                            # 添加間距
                             st.markdown("<br>", unsafe_allow_html=True)
                             
-                            # ⚡ Package Power 表格  
                             st.markdown("#### ⚡ Package Power")
                             if power_df is not None and not power_df.empty:
                                 st.dataframe(power_df, use_container_width=True, hide_index=True)
@@ -628,10 +577,8 @@ def main():
                                 </div>
                                 """, unsafe_allow_html=True)
                             
-                            # 添加間距
                             st.markdown("<br>", unsafe_allow_html=True)
                             
-                            # 🌡️ MSR Package Temperature 表格
                             st.markdown("#### 🌡️ MSR Package Temperature")
                             if temp_df is not None and not temp_df.empty:
                                 st.dataframe(temp_df, use_container_width=True, hide_index=True)
@@ -647,15 +594,14 @@ def main():
                         st.warning("⚠️ 無可用的數值型數據")
                 
                 else:
-                    # 多檔案混合分析模式
                     master_df = pd.concat(all_dfs)
                     master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean(numeric_only=True).interpolate(method='linear')
                     numeric_columns = master_df_resampled.columns.tolist()
 
                     if numeric_columns:
+                    if numeric_columns:
                         st.sidebar.markdown("### ⚙️ 圖表設定")
                         
-                        # 智能預設選擇 - 支援GPUMon
                         gpu_temp_cols = [c for c in numeric_columns if 'GPU' in c and 'Temperature' in c]
                         cpu_temp_cols = [c for c in numeric_columns if 'PTAT' in c and 'Temp' in c]
                         yoko_temp_cols = [c for c in numeric_columns if 'YOKO' in c]
@@ -674,7 +620,6 @@ def main():
                         right_y_axis_options = ['None'] + numeric_columns
                         default_right_index = 0
                         
-                        # 智能配對建議
                         if len(numeric_columns) > 1:
                             gpu_power_cols = [c for c in numeric_columns if 'GPU' in c and 'Power' in c]
                             cpu_power_cols = [c for c in numeric_columns if 'PTAT' in c and 'Power' in c]
@@ -697,7 +642,6 @@ def main():
                             index=default_right_index
                         )
                         
-                        # X軸和Y軸範圍設定
                         st.sidebar.markdown("#### 🎚️ 軸範圍設定")
                         x_min_val = master_df_resampled.index.min().total_seconds()
                         x_max_val = master_df_resampled.index.max().total_seconds()
@@ -712,7 +656,6 @@ def main():
                         else:
                             x_min, x_max = x_min_val, x_max_val
                         
-                        # Y軸範圍設定
                         auto_y = st.sidebar.checkbox("🔄 自動Y軸範圍", value=True)
                         y_limits = None
                         if not auto_y and left_y_axis:
@@ -730,10 +673,8 @@ def main():
                                 )
                                 y_limits = (y_min, y_max)
                         
-                        # 主要內容
                         st.markdown("### 🔀 混合數據分析圖表")
                         
-                        # 顯示數據來源摘要
                         source_summary = []
                         for log_type in set(log_types):
                             count = log_types.count(log_type)
@@ -746,7 +687,6 @@ def main():
                         
                         st.info(f"**數據來源：** {' + '.join(source_summary)}")
                         
-                        # 根據主要數據類型選擇合適的圖表生成函數
                         if has_gpumon:
                             fig = generate_gpumon_chart(master_df_resampled, left_y_axis, right_y_axis, (x_min, x_max), y_limits)
                         else:
@@ -767,32 +707,25 @@ def main():
                 """, unsafe_allow_html=True)
     
     else:
-        # 美化的歡迎頁面 - 包含GPUMon支援
-        
-        # 主標題區域
         st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件開始分析")
         
-        # 使用三欄布局
         col1, col2, col3 = st.columns(3)
         
         with col1:
             st.subheader("📋 支援格式")
             
-            # YOKOGAWA格式
             with st.container():
                 st.success("📊 **YOKOGAWA Excel (.xlsx)**")
                 st.caption("自動識別CH編號與Tag標籤")
             
-            st.write("")  # 空行
+            st.write("")
             
-            # PTAT格式  
             with st.container():
                 st.success("🖥️ **PTAT CSV (.csv)**")
                 st.caption("CPU溫度、頻率、功耗分析")
             
-            st.write("")  # 空行
+            st.write("")
             
-            # GPUMon格式 (新增)
             with st.container():
                 st.success("🎮 **GPUMon CSV (.csv)**")
                 st.caption("GPU溫度、功耗、頻率、使用率")
@@ -800,7 +733,6 @@ def main():
         with col2:
             st.subheader("✨ 主要功能")
             
-            # 功能列表
             st.write("🎯 **智能檔案格式識別**")
             st.caption("自動檢測並解析不同格式的Log檔案")
             
@@ -834,10 +766,8 @@ def main():
             st.write("🏷️ **狀態監控**")
             st.caption("P-State、限制原因智能分析")
         
-        # 分隔線
         st.divider()
         
-        # 使用指南
         st.subheader("📖 快速使用指南")
         
         step_col1, step_col2, step_col3, step_col4 = st.columns(4)
@@ -866,7 +796,6 @@ def main():
             在圖表和統計表格中查看分析結果
             """)
         
-        # GPUMon 特色展示
         st.subheader("🎮 GPUMon 監控能力")
         
         gpu_col1, gpu_col2 = st.columns(2)
@@ -901,10 +830,8 @@ def main():
             - RTD3/GC6狀態
             """)
         
-        # 技術支援
         st.warning("💡 **需要幫助？** 如有任何問題，請聯繫技術支援團隊")
         
-        # 側邊欄支援資訊
         st.sidebar.markdown("---")
         st.sidebar.markdown("""
         ### 📞 技術支援
@@ -920,7 +847,6 @@ def main():
         - [🎮 GPUMon指南](https://example.com/gpumon-guide)
         """)
     
-    # 頁面底部
     st.markdown("---")
     st.markdown(f"""
     <div style="text-align: center; color: #666; font-size: 0.9em; padding: 1rem;">
@@ -928,10 +854,9 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-# 執行主程式
 if __name__ == "__main__":
     main()
-                            # universal_analysis_platform_v9_0_gpumon.py
+                # universal_analysis_platform_v9_0_gpumon.py
 # 完整的數據分析平台 - 新增GPUMon支持
 
 import streamlit as st
@@ -1477,7 +1402,7 @@ def calculate_ptat_stats(df, x_limits=None):
 
 # --- 圖表繪製函式 ---
 def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
-    """改進版YOKOGAWA溫度圖表 - 調整為與PTAT圖表相同大小"""
+    """改進版YOKOGAWA溫度圖表"""
     if df is None: 
         return None
     
@@ -1490,7 +1415,6 @@ def generate_yokogawa_temp_chart(df, x_limits=None, y_limits=None):
     if df_chart.empty:
         return None
     
-    # 調整圖表大小與PTAT圖表一致
     fig, ax = plt.subplots(figsize=(10.2, 5.1))
     
     numeric_cols = df_chart.select_dtypes(include=['number']).columns
@@ -1563,3 +1487,7 @@ def generate_flexible_chart(df, left_col, right_col, x_limits, y_limits=None):
         ax1.set_xlim(x_limits)
     
     fig.tight_layout()
+    return fig
+
+def generate_gpumon_chart(df, left_col, right_col, x_limits, y_limits=None):
+    """生
