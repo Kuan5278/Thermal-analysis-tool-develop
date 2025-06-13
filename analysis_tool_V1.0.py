@@ -1,11 +1,11 @@
-# universal_analysis_platform_v7_final.py
+# universal_analysis_platform_v7_1_final.py
 import streamlit as st
 import pandas as pd
 import matplotlib.pyplot as plt
 import io
 import re
 
-# --- 子模組：PTAT Log 解析器 ---
+# --- 子模組：PTAT Log 解析器 (穩定版) ---
 def parse_ptat(file_content):
     try:
         df = pd.read_csv(file_content, header=0, thousands=',', low_memory=False)
@@ -26,45 +26,26 @@ def parse_ptat(file_content):
     except Exception as e:
         return None, f"解析PTAT Log時出錯: {e}"
 
-# --- 子模組：YOKOGAWA Log 解析器 ---
+# --- 子模組：YOKOGAWA Log 解析器 (穩定版) ---
 def parse_yokogawa(file_content, is_excel=False):
     try:
         read_func = pd.read_excel if is_excel else pd.read_csv
-        # 讀取三層標頭
-        header_row_28 = read_func(file_content, header=None, skiprows=27, nrows=1).iloc[0].astype(str).str.strip()
-        file_content.seek(0)
-        tag_row_29 = read_func(file_content, header=None, skiprows=28, nrows=1).iloc[0].astype(str).str.strip()
-        file_content.seek(0)
-        main_header_30 = read_func(file_content, header=None, skiprows=29, nrows=1).iloc[0].astype(str).str.strip()
-        file_content.seek(0)
-        
-        # 智慧組合最終的標頭
-        final_columns = main_header_30.tolist()[:3] 
-        for i in range(3, len(main_header_30)):
-            tag_name = tag_row_29[i] if i < len(tag_row_29) else None
-            ch_name = header_row_28[i] if i < len(header_row_28) else f'CH_Fallback_{i}'
-            if pd.notna(tag_name) and tag_name.lower() != 'nan' and tag_name != '':
-                final_columns.append(tag_name)
-            else:
-                final_columns.append(ch_name)
-        
-        df = read_func(file_content, header=None, skiprows=30)
-        df.columns = final_columns[:len(df.columns)]
+        df = read_func(file_content, header=28, thousands=',')
         df.columns = df.columns.str.strip()
-
         time_column = 'Time'
         if time_column not in df.columns: return None, f"YOKOGAWA Log中找不到 '{time_column}' 欄位"
-        
         time_series = pd.to_datetime(df[time_column].astype(str), errors='coerce').dt.time
         df['time_index'] = pd.to_timedelta(time_series.astype(str))
         df.dropna(subset=['time_index'], inplace=True)
         start_time = df['time_index'].iloc[0]
         df['time_index'] = df['time_index'] - start_time
+        df = df.add_prefix('YOKO: ')
+        df.rename(columns={'YOKO: time_index': 'time_index'}, inplace=True)
         return df.set_index('time_index'), "YOKOGAWA Log"
     except Exception as e:
         return None, f"解析YOKOGAWA Log時出錯: {e}"
 
-# --- 主模組：解析器調度中心 ---
+# --- 主模組：解析器調度中心 (穩定版) ---
 def parse_dispatcher(uploaded_file):
     filename = uploaded_file.name
     file_content = io.BytesIO(uploaded_file.getvalue())
@@ -88,8 +69,25 @@ def parse_dispatcher(uploaded_file):
     return None, "未知的Log檔案格式"
 
 # --- 圖表繪製函式 ---
+def generate_yokogawa_temp_chart(df):
+    if df is None: return None
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    numeric_cols = df.select_dtypes(include=['number']).columns
+    cols_to_plot = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
+    
+    for col in cols_to_plot:
+        ax.plot(df.index.total_seconds(), pd.to_numeric(df[col], errors='coerce'), label=col)
+        
+    ax.set_title("YOKOGAWA All Channel Temperature Plot", fontsize=16)
+    ax.set_xlabel("Elapsed Time (seconds)", fontsize=12)
+    ax.set_ylabel("Temperature (°C)", fontsize=12)
+    ax.grid(True, linestyle='--', linewidth=0.5)
+    ax.legend(title="Channels", bbox_to_anchor=(1.04, 1), loc="upper left")
+    fig.tight_layout()
+    return fig
+
 def generate_flexible_chart(df, left_col, right_col, x_limits):
-    # (此函式內容與前次相同)
     if df is None or not left_col or left_col not in df.columns: return None
     if right_col and right_col != 'None' and right_col not in df.columns: return None
     df_chart = df.copy()
@@ -112,28 +110,6 @@ def generate_flexible_chart(df, left_col, right_col, x_limits):
     fig.tight_layout()
     return fig
 
-# --- 新增！YOKOGAWA 專屬圖表繪製函式 ---
-def generate_yokogawa_temp_chart(df):
-    if df is None: return None
-    fig, ax = plt.subplots(figsize=(12, 8))
-    
-    # 找出所有數值型欄位來繪製
-    numeric_cols = df.select_dtypes(include=['number']).columns
-    # 排除 'Date' 和 'sec' (如果它們被錯誤地讀為數值)
-    cols_to_plot = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
-    
-    for col in cols_to_plot:
-        ax.plot(df.index.total_seconds(), pd.to_numeric(df[col], errors='coerce'), label=col)
-        
-    ax.set_title("YOKOGAWA All Channel Temperature Plot", fontsize=16)
-    ax.set_xlabel("Elapsed Time (seconds)", fontsize=12)
-    ax.set_ylabel("Temperature (°C)", fontsize=12)
-    ax.grid(True, linestyle='--', linewidth=0.5)
-    # 將圖例放到圖表外側，避免遮擋
-    ax.legend(title="Channels", bbox_to_anchor=(1.04, 1), loc="upper left")
-    fig.tight_layout()
-    return fig
-
 # --- Streamlit 網頁應用程式介面 ---
 st.set_page_config(layout="wide"); st.title("通用數據分析平台")
 st.sidebar.header("控制面板")
@@ -141,28 +117,24 @@ uploaded_files = st.sidebar.file_uploader("上傳Log File (可多選)", type=['c
 st.sidebar.info("注意：若上傳YOKOGAWA日誌，請確保Tag欄位已填寫對應的測點代號。")
 
 if uploaded_files:
-    # 根據檔案數量和類型決定顯示模式
-    is_single_yokogawa = False
+    # --- 關鍵修正：只在需要時才進行檔案類型預判 ---
     if len(uploaded_files) == 1:
-        file_content_check = io.BytesIO(uploaded_files[0].getvalue())
-        df_check, log_type_check = parse_dispatcher(file_content_check)
-        if log_type_check == "YOKOGAWA Log":
-            is_single_yokogawa = True
-            df_yoko = df_check # 直接使用已解析的df
-            log_type_detected = [f"{uploaded_files[0].name} (辨識為: {log_type_check})"]
-    
+        # 傳遞完整的檔案物件進行預判
+        df_check, log_type_check = parse_dispatcher(uploaded_files[0])
+        is_single_yokogawa = (log_type_check == "YOKOGAWA Log")
+    else:
+        is_single_yokogawa = False
+
     # --- YOKOGAWA 專屬顯示模式 ---
     if is_single_yokogawa:
-        st.sidebar.success("檔案解析完成！")
-        for name in log_type_detected: st.sidebar.markdown(f"- `{name}`")
+        st.sidebar.success(f"檔案 '{uploaded_files[0].name}'\n(辨識為: YOKOGAWA Log)")
         st.header("YOKOGAWA 全通道溫度曲線圖")
-        fig = generate_yokogawa_temp_chart(df_yoko)
-        if fig:
-            st.pyplot(fig)
-        else:
-            st.warning("無法產生YOKOGAWA溫度圖表。")
+        # 直接使用預判時已解析的 DataFrame
+        fig = generate_yokogawa_temp_chart(df_check)
+        if fig: st.pyplot(fig)
+        else: st.warning("無法產生YOKOGAWA溫度圖表。")
 
-    # --- 通用互動式分析模式 ---
+    # --- 通用互動式分析模式 (適用於PTAT或多檔案) ---
     else:
         all_dfs = []; log_types_detected = []
         with st.spinner('正在解析所有Log檔案...'):
@@ -172,15 +144,16 @@ if uploaded_files:
                     all_dfs.append(df); log_types_detected.append(f"{file.name} (辨識為: {log_type})")
                 else:
                     st.error(f"檔案 '{file.name}' 解析失敗: {log_type}")
+        
         if all_dfs:
             st.sidebar.success("檔案解析完成！")
             for name in log_types_detected: st.sidebar.markdown(f"- `{name}`")
             master_df = pd.concat(all_dfs); 
             master_df_resampled = master_df.select_dtypes(include=['number']).resample('1S').mean(numeric_only=True).interpolate(method='linear')
             numeric_columns = master_df_resampled.columns.tolist()
+
             if numeric_columns:
                 st.sidebar.header("圖表設定")
-                # ... (以下UI部分與前次相同) ...
                 default_left_list = [c for c in numeric_columns if 'Temp' in c or 'T_' in c]
                 default_left = default_left_list[0] if default_left_list else numeric_columns[0]
                 left_y_axis = st.sidebar.selectbox("選擇左側Y軸變數", options=numeric_columns, index=numeric_columns.index(default_left) if default_left in numeric_columns else 0)
