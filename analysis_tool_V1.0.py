@@ -90,11 +90,22 @@ def parse_gpumon(file_content):
         df = pd.DataFrame(data_rows, columns=headers[:max_cols])
         st.write(f"🎯 DataFrame創建成功: {df.shape}")
         
-        # 處理時間數據 - 更強健的方式
+        # 處理時間數據 - 修正毫秒格式問題
         try:
             if 'Date' in df.columns and 'Timestamp' in df.columns:
-                # 嘗試標準方式
-                df['DateTime'] = pd.to_datetime(df['Date'] + ' ' + df['Timestamp'], errors='coerce')
+                st.write(f"🕐 處理時間格式: Date + Timestamp")
+                
+                # 修正時間戳格式：20:50:38:502 -> 20:50:38.502
+                df['Timestamp_fixed'] = df['Timestamp'].str.replace(r':(\d{3})$', r'.\1', regex=True)
+                
+                # 顯示修正前後的時間格式
+                st.write(f"🔧 時間格式修正: {df['Timestamp'].iloc[0]} -> {df['Timestamp_fixed'].iloc[0]}")
+                
+                # 合併日期和修正後的時間
+                df['DateTime'] = pd.to_datetime(df['Date'] + ' ' + df['Timestamp_fixed'], errors='coerce')
+                
+                st.write(f"📅 合併後時間: {df['DateTime'].iloc[0]}")
+                
             elif 'Date' in df.columns:
                 # 只有日期
                 df['DateTime'] = pd.to_datetime(df['Date'], errors='coerce')
@@ -107,15 +118,27 @@ def parse_gpumon(file_content):
                     # 使用序號作為時間索引
                     df['DateTime'] = pd.to_datetime('2025-01-01') + pd.to_timedelta(range(len(df)), unit='s')
             
-            df['time_index'] = df['DateTime'] - df['DateTime'].iloc[0]
-            valid_mask = df['time_index'].notna()
-            df = df[valid_mask].copy()
+            # 檢查DateTime解析結果
+            valid_datetime_count = df['DateTime'].notna().sum()
+            st.write(f"📊 成功解析的時間點: {valid_datetime_count}/{len(df)}")
             
-            st.write(f"⏰ 時間解析成功，有效數據: {len(df)} 行")
+            if valid_datetime_count > 0:
+                # 創建時間索引
+                df['time_index'] = df['DateTime'] - df['DateTime'].iloc[0]
+                valid_mask = df['time_index'].notna()
+                df = df[valid_mask].copy()
+                
+                st.write(f"⏰ 時間解析成功，最終有效數據: {len(df)} 行")
+                
+                if len(df) > 0:
+                    st.write(f"📈 時間範圍: {df['time_index'].min()} 到 {df['time_index'].max()}")
+            else:
+                st.warning("⚠️ 無法解析任何時間數據，使用序號索引")
+                df['time_index'] = pd.to_timedelta(range(len(df)), unit='s')
             
         except Exception as e:
-            st.write(f"⚠️ 時間解析問題，使用序號索引: {e}")
-            # 使用序號作為備用時間索引
+            st.write(f"⚠️ 時間解析異常: {e}")
+            st.write("🔄 使用序號作為備用時間索引")
             df['time_index'] = pd.to_timedelta(range(len(df)), unit='s')
         
         if df.empty:
@@ -881,4 +904,3 @@ def main():
         st.info("🚀 **開始使用** - 請在左側上傳您的 GPUMon.csv 文件進行測試")
 
 if __name__ == "__main__":
-    main()
