@@ -1,5 +1,5 @@
-# refactored_thermal_analysis_platform.py
-# 重構版數據分析平台 - 優化架構設計
+# thermal_analysis_platform_v10.py
+# GPU & 溫度數據分析平台 - v10 完整最新版
 
 import streamlit as st
 import pandas as pd
@@ -11,6 +11,10 @@ import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
+
+# 版本資訊
+VERSION = "v10.0 Debug"
+VERSION_DATE = "2025年6月"
 
 # =============================================================================
 # 1. 數據模型層 (Data Model Layer)
@@ -336,7 +340,7 @@ class PTATParser(LogParser):
             return None
 
 class YokogawaParser(LogParser):
-    """YOKOGAWA解析器"""
+    """YOKOGAWA解析器 - 完整版重命名邏輯"""
     
     @property
     def log_type(self) -> str:
@@ -347,23 +351,33 @@ class YokogawaParser(LogParser):
         return True
     
     def parse(self, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
+        st.write(f"🚀 YOKOGAWA解析器啟動 - 檔案: {filename}")
+        
         try:
             is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
             read_func = pd.read_excel if is_excel else pd.read_csv
+            
+            st.write(f"🔍 檔案類型: {'Excel' if is_excel else 'CSV'}")
             
             if is_excel:
                 possible_headers = [29, 28, 30, 27]
             else:
                 possible_headers = [0, 1, 2]
-            
+                
             df = None
             found_time_col = None
+            successful_header = None
+            
+            st.write(f"📋 嘗試header行: {possible_headers}")
             
             for header_row in possible_headers:
                 try:
                     file_content.seek(0)
                     df = read_func(file_content, header=header_row, thousands=',')
                     df.columns = df.columns.str.strip()
+                    
+                    st.write(f"  嘗試header_row={header_row}, 得到形狀: {df.shape}")
+                    st.write(f"  欄位: {list(df.columns)[:8]}...")
                     
                     time_candidates = ['Time', 'TIME', 'time', 'Date', 'DATE', 'date', 
                                      'DateTime', 'DATETIME', 'datetime', '時間', '日期時間',
@@ -372,32 +386,134 @@ class YokogawaParser(LogParser):
                     for candidate in time_candidates:
                         if candidate in df.columns:
                             found_time_col = candidate
+                            successful_header = header_row
+                            st.write(f"  ✅ 找到時間欄位: {candidate}")
                             break
                     
                     if found_time_col:
                         break
                         
-                except Exception:
+                except Exception as e:
+                    st.write(f"  ❌ header_row={header_row} 失敗: {e}")
                     continue
             
             if df is None or found_time_col is None:
+                error_msg = f"❌ 無法找到時間欄位。最後嘗試的欄位: {list(df.columns) if df is not None else '無'}"
+                st.write(error_msg)
                 return None
             
-            # 處理時間和數據...（簡化版，保留原邏輯）
-            time_series = df[found_time_col].astype(str).str.strip()
+            time_column = found_time_col
+            st.write(f"✅ 成功解析，使用header_row={successful_header}, 時間欄位='{time_column}'")
+            st.write(f"📊 DataFrame最終形狀: {df.shape}")
+            
+            # ★★★ 重命名邏輯 - 在任何其他處理之前執行 ★★★
+            if is_excel:
+                st.write("=" * 50)
+                st.write("🏷️ 開始YOKOGAWA欄位重命名邏輯")
+                st.write("=" * 50)
+                
+                try:
+                    # 讀取第28行和第29行
+                    ch_row_idx = 27  # 第28行
+                    tag_row_idx = 28  # 第29行
+                    
+                    st.write(f"📖 準備讀取第{ch_row_idx+1}行(CH行)和第{tag_row_idx+1}行(Tag行)")
+                    
+                    # 讀取CH行
+                    file_content.seek(0)
+                    ch_row = pd.read_excel(file_content, header=None, skiprows=ch_row_idx, nrows=1).iloc[0]
+                    st.write(f"✅ 第28行讀取成功，長度: {len(ch_row)}")
+                    st.write(f"📋 第28行前10個: {[str(ch_row.iloc[i]) if i < len(ch_row) else 'N/A' for i in range(10)]}")
+                    
+                    # 讀取Tag行
+                    file_content.seek(0)
+                    tag_row = pd.read_excel(file_content, header=None, skiprows=tag_row_idx, nrows=1).iloc[0]
+                    st.write(f"✅ 第29行讀取成功，長度: {len(tag_row)}")
+                    st.write(f"📋 第29行前10個: {[str(tag_row.iloc[i]) if i < len(tag_row) else 'N/A' for i in range(10)]}")
+                    
+                    # 執行重命名
+                    st.write("🔄 開始重命名處理...")
+                    original_columns = list(df.columns)
+                    st.write(f"📋 原始欄位: {original_columns[:10]}...")
+                    
+                    new_column_names = {}
+                    rename_log = []
+                    
+                    for i, original_col in enumerate(df.columns):
+                        # 獲取CH和Tag名稱
+                        ch_name = ""
+                        tag_name = ""
+                        
+                        if i < len(ch_row):
+                            ch_val = ch_row.iloc[i]
+                            if pd.notna(ch_val) and str(ch_val).strip() not in ['nan', 'NaN', '', ' ', 'None']:
+                                ch_name = str(ch_val).strip()
+                        
+                        if i < len(tag_row):
+                            tag_val = tag_row.iloc[i]
+                            if pd.notna(tag_val) and str(tag_val).strip() not in ['nan', 'NaN', 'Tag', '', ' ', 'None']:
+                                tag_name = str(tag_val).strip()
+                        
+                        # 決定最終名稱
+                        if tag_name:
+                            final_name = tag_name
+                            rename_log.append(f"欄位{i+1}: '{original_col}' → Tag'{tag_name}'")
+                        elif ch_name and ch_name.startswith('CH'):
+                            final_name = ch_name
+                            rename_log.append(f"欄位{i+1}: '{original_col}' → CH'{ch_name}'")
+                        else:
+                            final_name = original_col
+                            rename_log.append(f"欄位{i+1}: '{original_col}' → 保持原名")
+                        
+                        new_column_names[original_col] = final_name
+                    
+                    # 顯示重命名計劃
+                    st.write("📝 重命名計劃:")
+                    for log_entry in rename_log[:15]:  # 顯示前15個
+                        st.write(f"  {log_entry}")
+                    
+                    # 執行重命名
+                    df.rename(columns=new_column_names, inplace=True)
+                    st.write(f"✅ 重命名執行完成！")
+                    
+                    # 驗證重命名結果
+                    renamed_columns = list(df.columns)
+                    st.write(f"📋 重命名後欄位: {renamed_columns[:10]}...")
+                    
+                    # 統計重命名效果
+                    actual_changes = [(old, new) for old, new in new_column_names.items() if old != new]
+                    st.write(f"📊 實際重命名了 {len(actual_changes)} 個欄位:")
+                    for old, new in actual_changes[:8]:
+                        st.write(f"  '{old}' → '{new}'")
+                    
+                except Exception as e:
+                    st.write(f"❌ 重命名過程異常: {e}")
+                    import traceback
+                    st.write("詳細錯誤堆疊:")
+                    st.code(traceback.format_exc())
+                    st.write("⚠️ 將繼續使用原始欄位名稱")
+            
+            # 繼續處理時間和其他邏輯...
+            st.write("⏰ 開始處理時間數據...")
+            time_series = df[time_column].astype(str).str.strip()
             
             try:
                 df['time_index'] = pd.to_timedelta(time_series + ':00').fillna(pd.to_timedelta('00:00:00'))
                 if df['time_index'].isna().all():
                     raise ValueError("Timedelta 轉換失敗")
             except:
-                datetime_series = pd.to_datetime(time_series, format='%H:%M:%S', errors='coerce')
-                if datetime_series.notna().sum() == 0:
-                    datetime_series = pd.to_datetime(time_series, errors='coerce')
-                df['time_index'] = datetime_series - datetime_series.iloc[0]
+                try:
+                    datetime_series = pd.to_datetime(time_series, format='%H:%M:%S', errors='coerce')
+                    if datetime_series.notna().sum() == 0:
+                        datetime_series = pd.to_datetime(time_series, errors='coerce')
+                    df['time_index'] = datetime_series - datetime_series.iloc[0]
+                except Exception as e:
+                    st.write(f"❌ 時間解析失敗: {e}")
+                    return None
             
             valid_times_mask = df['time_index'].notna()
             if valid_times_mask.sum() == 0:
+                st.write("❌ 沒有有效的時間數據")
                 return None
             
             df = df[valid_times_mask].copy()
@@ -406,8 +522,21 @@ class YokogawaParser(LogParser):
                 start_time = df['time_index'].iloc[0]
                 df['time_index'] = df['time_index'] - start_time
             
+            # 數值轉換
+            numeric_columns = df.select_dtypes(include=['number']).columns
+            for col in numeric_columns:
+                if col != 'time_index':
+                    df[col] = pd.to_numeric(df[col], errors='coerce')
+            
+            # 添加前綴
+            st.write("🏷️ 添加YOKO前綴...")
+            before_prefix = list(df.columns)[:5]
             df = df.add_prefix('YOKO: ')
             df.rename(columns={'YOKO: time_index': 'time_index'}, inplace=True)
+            after_prefix = list(df.columns)[:5]
+            
+            st.write(f"前綴前: {before_prefix}")
+            st.write(f"前綴後: {after_prefix}")
             
             result_df = df.set_index('time_index')
             
@@ -424,9 +553,16 @@ class YokogawaParser(LogParser):
                 file_size_kb=file_size_kb
             )
             
+            st.write(f"🎉 YOKOGAWA解析完成！最終形狀: {result_df.shape}")
+            st.write(f"🏷️ 最終欄位樣本: {list(result_df.columns)[:8]}...")
+            
             return LogData(result_df, metadata)
             
         except Exception as e:
+            st.write(f"❌ YOKOGAWA解析器整體異常: {e}")
+            import traceback
+            st.write("完整錯誤堆疊:")
+            st.code(traceback.format_exc())
             return None
 
 # =============================================================================
@@ -799,7 +935,9 @@ class ChartGenerator:
         for col in cols_to_plot:
             y_data = pd.to_numeric(df[col], errors='coerce')
             if not y_data.isna().all():
-                ax.plot(df.index.total_seconds(), y_data, label=col, linewidth=1)
+                # 移除前綴顯示更友好的名稱
+                display_name = col.replace('YOKO: ', '') if col.startswith('YOKO: ') else col
+                ax.plot(df.index.total_seconds(), y_data, label=display_name, linewidth=1)
         
         ax.set_title("YOKOGAWA All Channel Temperature Plot", fontsize=14, fontweight='bold')
         ax.set_xlabel("Elapsed Time (seconds)", fontsize=11)
@@ -1099,21 +1237,27 @@ def display_version_info():
     """顯示版本資訊"""
     with st.expander("📋 版本資訊", expanded=False):
         st.markdown(f"""
-        **當前版本：v9.2 重構版** | **發布日期：2025年6月**
+        **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🆕 架構重構內容：
-        - 🏗️ **分層架構設計** - 數據、解析、業務、UI分層
-        - 🔌 **解析器註冊系統** - 可插拔的解析器架構
-        - 🎨 **UI渲染器分離** - 每種log類型獨立的UI邏輯
-        - 📊 **統一數據模型** - LogData抽象化數據操作
-        - 🛠️ **策略模式應用** - 靈活的功能擴展機制
+        ### 🆕 v10.0 更新內容：
+        - 🔍 **超詳細調試功能** - 完整的YOKOGAWA解析過程跟蹤
+        - 🏷️ **智能欄位重命名** - 第29行Tag優先，空白用第28行CH
+        - 📊 **統計表格優化** - 垂直顯示，移除滾動條，完整數據展示
+        - 🎯 **預設值設定** - GPUMon/PTAT自動選擇最相關的監控指標
+        - 🐛 **問題修復** - 解決重命名邏輯不生效的問題
+        
+        ### 🏗️ 架構優勢：
+        - 分層架構設計，高擴展性
+        - 可插拔解析器系統
+        - UI組件化渲染
+        - 統一數據模型
         
         ---
-        💡 **架構優勢：** 高擴展性、低耦合、易維護、功能保持不變
+        💡 **使用提示：** 現在會顯示超詳細的解析過程，幫助你了解每個步驟的執行情況
         """)
 
 def main():
-    """主程式 - 重構版"""
+    """主程式 - v10.0"""
     st.set_page_config(
         page_title="GPU & 溫度數據分析平台",
         page_icon="🎮",
@@ -1121,7 +1265,7 @@ def main():
         initial_sidebar_state="expanded"
     )
     
-    # CSS樣式（保持不變）
+    # CSS樣式
     st.markdown("""
     <style>
         .main-header {
@@ -1164,7 +1308,7 @@ def main():
     <div class="main-header">
         <h1>🎮 GPU & 溫度數據分析平台</h1>
         <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件，提供專業級數據分析與視覺化</p>
-        <p><strong>v9.2 重構版</strong> | 2025年6月</p>
+        <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
     
@@ -1305,12 +1449,12 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
         
-        ### 🏗️ 重構架構優勢
+        ### 🔍 v10.0 新功能
         
-        - **分層設計** - 數據、解析、業務、UI各司其職
-        - **插件化解析** - 新增格式只需實現LogParser接口
-        - **UI組件化** - 每種log類型獨立的渲染器
-        - **統一數據模型** - 簡化數據操作和管理
+        - **超詳細調試** - 完整顯示解析過程的每個步驟
+        - **智能重命名** - YOKOGAWA檔案自動使用Tag和CH名稱
+        - **表格優化** - 統計數據垂直顯示，無滾動條
+        - **預設值設定** - 自動選擇最相關的監控指標
         """)
 
 if __name__ == "__main__":
