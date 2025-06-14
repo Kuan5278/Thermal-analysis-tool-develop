@@ -553,12 +553,100 @@ class StatisticsCalculator:
         if df.empty:
             return None, None, None
         
-        # 簡化版PTAT統計...（保留原邏輯）
+        # CPU Core Frequency 統計
         freq_stats = []
-        power_stats = []
-        temp_stats = []
+        freq_cols = [col for col in df.columns if 'frequency' in col.lower() and 'core' in col.lower()]
         
-        return pd.DataFrame(freq_stats), pd.DataFrame(power_stats), pd.DataFrame(temp_stats)
+        lfm_value = "N/A"
+        hfm_value = "N/A"
+        
+        for col in df.columns:
+            if 'lfm' in col.lower():
+                lfm_data = pd.to_numeric(df[col], errors='coerce').dropna()
+                if len(lfm_data) > 0:
+                    lfm_value = f"{lfm_data.iloc[0]:.0f} MHz"
+            elif 'hfm' in col.lower():
+                hfm_data = pd.to_numeric(df[col], errors='coerce').dropna()
+                if len(hfm_data) > 0:
+                    hfm_value = f"{hfm_data.iloc[0]:.0f} MHz"
+        
+        if lfm_value == "N/A" or hfm_value == "N/A":
+            all_freq_data = []
+            for col in freq_cols:
+                freq_data = pd.to_numeric(df[col], errors='coerce').dropna()
+                all_freq_data.extend(freq_data.tolist())
+            
+            if all_freq_data:
+                if lfm_value == "N/A":
+                    lfm_value = f"{min(all_freq_data):.0f} MHz (估算)"
+                if hfm_value == "N/A":
+                    hfm_value = f"{max(all_freq_data):.0f} MHz (估算)"
+        
+        for col in freq_cols:
+            freq_data = pd.to_numeric(df[col], errors='coerce').dropna()
+            if len(freq_data) > 0:
+                freq_stats.append({
+                    'Core': col.replace('PTAT: ', ''),
+                    'Max (MHz)': f"{freq_data.max():.0f}",
+                    'Min (MHz)': f"{freq_data.min():.0f}",
+                    'Avg (MHz)': f"{freq_data.mean():.0f}"
+                })
+        
+        if freq_stats:
+            freq_stats.append({
+                'Core': '--- 參考值 ---',
+                'Max (MHz)': '',
+                'Min (MHz)': '',
+                'Avg (MHz)': ''
+            })
+            freq_stats.append({
+                'Core': 'LFM (Low Freq Mode)',
+                'Max (MHz)': lfm_value,
+                'Min (MHz)': '',
+                'Avg (MHz)': ''
+            })
+            freq_stats.append({
+                'Core': 'HFM (High Freq Mode)',
+                'Max (MHz)': hfm_value,
+                'Min (MHz)': '',
+                'Avg (MHz)': ''
+            })
+        
+        freq_df = pd.DataFrame(freq_stats) if freq_stats else None
+        
+        # Package Power 統計
+        power_stats = []
+        power_cols = [col for col in df.columns if 'power' in col.lower() and 'package' in col.lower()]
+        
+        for col in power_cols:
+            power_data = pd.to_numeric(df[col], errors='coerce').dropna()
+            if len(power_data) > 0:
+                power_stats.append({
+                    'Power Type': col.replace('PTAT: ', ''),
+                    'Max (W)': f"{power_data.max():.2f}",
+                    'Min (W)': f"{power_data.min():.2f}",
+                    'Avg (W)': f"{power_data.mean():.2f}"
+                })
+        
+        power_df = pd.DataFrame(power_stats) if power_stats else None
+        
+        # MSR Package Temperature 統計
+        temp_stats = []
+        temp_cols = [col for col in df.columns if 'temperature' in col.lower() and 'package' in col.lower() and 'msr' in col.lower()]
+        
+        for col in temp_cols:
+            temp_data = pd.to_numeric(df[col], errors='coerce').dropna()
+            if len(temp_data) > 0:
+                temp_stats.append({
+                    'Temperature Type': col.replace('PTAT: ', ''),
+                    'Max (°C)': f"{temp_data.max():.2f}",
+                    'Min (°C)': f"{temp_data.min():.2f}",
+                    'Avg (°C)': f"{temp_data.mean():.2f}"
+                })
+        
+        temp_df = pd.DataFrame(temp_stats) if temp_stats else None
+        
+        return freq_df, power_df, temp_df
     
     @staticmethod
     def calculate_temp_stats(log_data: LogData, x_limits=None):
@@ -851,7 +939,7 @@ class PTATRenderer:
         
         st.success(f"✅ 數據載入成功：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
-        # PTAT專用UI邏輯...（簡化版）
+        # PTAT專用UI邏輯
         numeric_columns = self.log_data.numeric_columns
         if numeric_columns:
             st.sidebar.markdown("### ⚙️ PTAT 圖表設定")
@@ -862,10 +950,32 @@ class PTATRenderer:
             time_min, time_max = self.log_data.get_time_range()
             x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
             
+            # 顯示圖表
             st.markdown("### 📊 PTAT CPU 性能監控圖表")
             chart = self.chart_gen.generate_flexible_chart(self.log_data, left_y_axis, right_y_axis, x_range)
             if chart:
                 st.pyplot(chart)
+            
+            # 顯示統計數據
+            st.markdown("### 📈 PTAT 統計數據")
+            freq_stats, power_stats, temp_stats = self.stats_calc.calculate_ptat_stats(self.log_data, x_range)
+            
+            col1, col2, col3 = st.columns(3)
+            
+            with col1:
+                if freq_stats is not None and not freq_stats.empty:
+                    st.markdown("#### ⚡ CPU 頻率統計")
+                    st.dataframe(freq_stats, use_container_width=True)
+            
+            with col2:
+                if power_stats is not None and not power_stats.empty:
+                    st.markdown("#### 🔋 Package 功耗統計")
+                    st.dataframe(power_stats, use_container_width=True)
+            
+            with col3:
+                if temp_stats is not None and not temp_stats.empty:
+                    st.markdown("#### 🌡️ Package 溫度統計")
+                    st.dataframe(temp_stats, use_container_width=True)
 
 class YokogawaRenderer:
     """YOKOGAWA UI渲染器"""
@@ -886,7 +996,7 @@ class YokogawaRenderer:
         
         st.success(f"✅ 數據載入成功：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
-        # YOKOGAWA專用UI邏輯...（簡化版）
+        # YOKOGAWA專用UI邏輯
         st.sidebar.markdown("### ⚙️ YOKOGAWA 圖表設定")
         chart_mode = st.sidebar.radio("📈 圖表模式", ["全通道溫度圖", "自定義雙軸圖"])
         
@@ -894,10 +1004,35 @@ class YokogawaRenderer:
         x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
         
         if chart_mode == "全通道溫度圖":
+            y_range_enabled = st.sidebar.checkbox("啟用Y軸範圍限制")
+            y_range = None
+            if y_range_enabled:
+                y_min = st.sidebar.number_input("Y軸最小值", value=0.0)
+                y_max = st.sidebar.number_input("Y軸最大值", value=100.0)
+                y_range = (y_min, y_max)
+            
             st.markdown("### 📊 YOKOGAWA 全通道溫度圖表")
-            chart = self.chart_gen.generate_yokogawa_temp_chart(self.log_data, x_range)
+            chart = self.chart_gen.generate_yokogawa_temp_chart(self.log_data, x_range, y_range)
             if chart:
                 st.pyplot(chart)
+        
+        else:
+            numeric_columns = self.log_data.numeric_columns
+            if numeric_columns:
+                left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
+                right_y_axis_options = ['None'] + numeric_columns
+                right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
+                
+                st.markdown("### 📊 YOKOGAWA 自定義圖表")
+                chart = self.chart_gen.generate_flexible_chart(self.log_data, left_y_axis, right_y_axis, x_range)
+                if chart:
+                    st.pyplot(chart)
+        
+        # 顯示溫度統計
+        st.markdown("### 📈 溫度統計數據")
+        temp_stats = self.stats_calc.calculate_temp_stats(self.log_data, x_range)
+        if not temp_stats.empty:
+            st.dataframe(temp_stats, use_container_width=True)
 
 # =============================================================================
 # 7. UI工廠 (UI Factory)
@@ -1050,7 +1185,79 @@ def main():
         
         else:
             st.info("📊 多檔案模式，使用基本分析功能")
-            # 多檔案合併邏輯...（保持簡單）
+            
+            # 多檔案合併邏輯
+            if len(log_data_list) > 1:
+                try:
+                    combined_df = pd.concat([log_data.df for log_data in log_data_list], axis=1)
+                    
+                    # 創建合併的LogData
+                    combined_metadata = LogMetadata(
+                        filename="合併檔案",
+                        log_type="混合類型",
+                        rows=combined_df.shape[0],
+                        columns=combined_df.shape[1],
+                        time_range=f"{combined_df.index.min()} 到 {combined_df.index.max()}",
+                        file_size_kb=sum(log_data.metadata.file_size_kb for log_data in log_data_list)
+                    )
+                    
+                    combined_log_data = LogData(combined_df, combined_metadata)
+                    
+                    st.success(f"✅ 合併數據載入成功：{combined_log_data.metadata.rows} 行 × {combined_log_data.metadata.columns} 列")
+                    
+                    numeric_columns = combined_log_data.numeric_columns
+                    if numeric_columns:
+                        st.sidebar.markdown("### ⚙️ 圖表設定")
+                        left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
+                        right_y_axis_options = ['None'] + numeric_columns
+                        right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
+                        
+                        time_min, time_max = combined_log_data.get_time_range()
+                        x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
+                        
+                        st.markdown("### 📊 綜合數據圖表")
+                        chart_gen = ChartGenerator()
+                        chart = chart_gen.generate_flexible_chart(combined_log_data, left_y_axis, right_y_axis, x_range)
+                        if chart:
+                            st.pyplot(chart)
+                        
+                        # 顯示基本統計數據
+                        st.markdown("### 📈 基本統計數據")
+                        stats_calc = StatisticsCalculator()
+                        temp_stats = stats_calc.calculate_temp_stats(combined_log_data, x_range)
+                        if not temp_stats.empty:
+                            st.dataframe(temp_stats, use_container_width=True)
+                
+                except Exception as e:
+                    st.error(f"合併數據時出錯: {e}")
+            
+            else:
+                # 單檔案但不是已知類型的情況
+                log_data = log_data_list[0]
+                st.success(f"✅ 數據載入成功：{log_data.metadata.rows} 行 × {log_data.metadata.columns} 列")
+                
+                numeric_columns = log_data.numeric_columns
+                if numeric_columns:
+                    st.sidebar.markdown("### ⚙️ 圖表設定")
+                    left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
+                    right_y_axis_options = ['None'] + numeric_columns
+                    right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
+                    
+                    time_min, time_max = log_data.get_time_range()
+                    x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
+                    
+                    st.markdown("### 📊 數據圖表")
+                    chart_gen = ChartGenerator()
+                    chart = chart_gen.generate_flexible_chart(log_data, left_y_axis, right_y_axis, x_range)
+                    if chart:
+                        st.pyplot(chart)
+                    
+                    # 顯示基本統計數據
+                    st.markdown("### 📈 基本統計數據")
+                    stats_calc = StatisticsCalculator()
+                    temp_stats = stats_calc.calculate_temp_stats(log_data, x_range)
+                    if not temp_stats.empty:
+                        st.dataframe(temp_stats, use_container_width=True)
     
     else:
         st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件進行分析")
