@@ -6,15 +6,196 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import io
 import re
-from datetime import datetime
+from datetime import datetime, date
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Dict, List, Tuple, Optional, Any
 from dataclasses import dataclass
+import json
+import os
 
 # 版本資訊
-VERSION = "v10.0 Debug"
+VERSION = "v10.1 Stats"
 VERSION_DATE = "2025年6月"
+
+# =============================================================================
+# 0. 訪問計數器 (Visit Counter)
+# =============================================================================
+
+class VisitCounter:
+    """訪問計數器"""
+    
+    def __init__(self, counter_file="visit_counter.json"):
+        self.counter_file = counter_file
+        self.data = self._load_counter()
+    
+    def _load_counter(self) -> dict:
+        """載入計數器數據"""
+        try:
+            if os.path.exists(self.counter_file):
+                with open(self.counter_file, 'r', encoding='utf-8') as f:
+                    return json.load(f)
+            else:
+                return {
+                    "total_visits": 0,
+                    "daily_visits": {},
+                    "first_visit": None,
+                    "last_visit": None
+                }
+        except Exception:
+            return {
+                "total_visits": 0,
+                "daily_visits": {},
+                "first_visit": None,
+                "last_visit": None
+            }
+    
+    def _save_counter(self):
+        """保存計數器數據"""
+        try:
+            with open(self.counter_file, 'w', encoding='utf-8') as f:
+                json.dump(self.data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+    
+    def increment_visit(self):
+        """增加訪問計數"""
+        now = datetime.now()
+        today = now.strftime("%Y-%m-%d")
+        
+        # 更新總訪問次數
+        self.data["total_visits"] += 1
+        
+        # 更新今日訪問次數
+        if today not in self.data["daily_visits"]:
+            self.data["daily_visits"][today] = 0
+        self.data["daily_visits"][today] += 1
+        
+        # 更新首次訪問時間
+        if self.data["first_visit"] is None:
+            self.data["first_visit"] = now.isoformat()
+        
+        # 更新最後訪問時間
+        self.data["last_visit"] = now.isoformat()
+        
+        # 清理舊的日訪問記錄（保留最近30天）
+        self._cleanup_old_records()
+        
+        # 保存數據
+        self._save_counter()
+    
+    def _cleanup_old_records(self):
+        """清理30天前的日訪問記錄"""
+        try:
+            today = date.today()
+            cutoff_date = today.replace(day=today.day-30) if today.day > 30 else today.replace(month=today.month-1, day=30)
+            cutoff_str = cutoff_date.strftime("%Y-%m-%d")
+            
+            # 移除30天前的記錄
+            keys_to_remove = [k for k in self.data["daily_visits"].keys() if k < cutoff_str]
+            for key in keys_to_remove:
+                del self.data["daily_visits"][key]
+        except Exception:
+            pass
+    
+    def get_stats(self) -> dict:
+        """獲取統計信息"""
+        today = date.today().strftime("%Y-%m-%d")
+        yesterday = (date.today().replace(day=date.today().day-1)).strftime("%Y-%m-%d") if date.today().day > 1 else None
+        
+        # 計算最近7天訪問量
+        recent_7_days = 0
+        for i in range(7):
+            check_date = (date.today().replace(day=date.today().day-i)).strftime("%Y-%m-%d")
+            recent_7_days += self.data["daily_visits"].get(check_date, 0)
+        
+        return {
+            "total_visits": self.data["total_visits"],
+            "today_visits": self.data["daily_visits"].get(today, 0),
+            "yesterday_visits": self.data["daily_visits"].get(yesterday, 0) if yesterday else 0,
+            "recent_7_days": recent_7_days,
+            "first_visit": self.data["first_visit"],
+            "last_visit": self.data["last_visit"],
+            "active_days": len(self.data["daily_visits"])
+        }
+
+def display_visit_counter():
+    """顯示訪問計數器"""
+    # 初始化計數器
+    if 'visit_counter' not in st.session_state:
+        st.session_state.visit_counter = VisitCounter()
+        st.session_state.visit_counted = False
+    
+    # 只在第一次加載時計數
+    if not st.session_state.visit_counted:
+        st.session_state.visit_counter.increment_visit()
+        st.session_state.visit_counted = True
+    
+    # 獲取統計數據
+    stats = st.session_state.visit_counter.get_stats()
+    
+    # 顯示計數器
+    with st.sidebar:
+        st.markdown("---")
+        st.markdown("### 📊 使用統計")
+        
+        # 使用columns來並排顯示
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.metric(
+                label="💫 總訪問",
+                value=f"{stats['total_visits']:,}",
+                help="自首次啟動以來的總訪問次數"
+            )
+            
+            st.metric(
+                label="📅 今日",
+                value=f"{stats['today_visits']:,}",
+                delta=f"+{stats['today_visits'] - stats['yesterday_visits']}" if stats['yesterday_visits'] > 0 else None,
+                help="今日訪問次數"
+            )
+        
+        with col2:
+            st.metric(
+                label="📈 近7天",
+                value=f"{stats['recent_7_days']:,}",
+                help="最近7天總訪問次數"
+            )
+            
+            st.metric(
+                label="🗓️ 活躍天數",
+                value=f"{stats['active_days']:,}",
+                help="有訪問記錄的天數"
+            )
+        
+        # 顯示詳細信息
+        with st.expander("📋 詳細統計", expanded=False):
+            if stats['first_visit']:
+                first_visit = datetime.fromisoformat(stats['first_visit'])
+                st.write(f"🚀 **首次使用：** {first_visit.strftime('%Y-%m-%d %H:%M')}")
+            
+            if stats['last_visit']:
+                last_visit = datetime.fromisoformat(stats['last_visit'])
+                st.write(f"⏰ **最後使用：** {last_visit.strftime('%Y-%m-%d %H:%M')}")
+            
+            st.write(f"📊 **平均每日：** {stats['total_visits'] / max(stats['active_days'], 1):.1f} 次")
+            
+            # 顯示最近幾天的訪問趨勢
+            recent_data = []
+            for i in range(6, -1, -1):  # 最近7天，倒序
+                check_date = date.today().replace(day=date.today().day-i) if date.today().day > i else date.today().replace(month=date.today().month-1, day=30-i+date.today().day)
+                date_str = check_date.strftime("%Y-%m-%d")
+                visits = st.session_state.visit_counter.data["daily_visits"].get(date_str, 0)
+                recent_data.append({
+                    'date': check_date.strftime("%m/%d"),
+                    'visits': visits
+                })
+            
+            if recent_data:
+                st.write("📈 **最近7天趨勢：**")
+                trend_text = " | ".join([f"{d['date']}: {d['visits']}" for d in recent_data])
+                st.code(trend_text, language=None)
 
 # =============================================================================
 # 1. 數據模型層 (Data Model Layer)
@@ -1300,6 +1481,12 @@ def main():
             border-radius: 8px;
             margin: 1rem 0;
         }
+        .stMetric {
+            background-color: #f8f9fa;
+            padding: 0.5rem;
+            border-radius: 0.25rem;
+            border: 1px solid #dee2e6;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -1331,8 +1518,12 @@ def main():
         help="支援 YOKOGAWA Excel、PTAT CSV、GPUMon CSV 格式"
     )
     
+    # ★★★ 顯示訪問計數器 ★★★
+    display_visit_counter()
+    
     if uploaded_files:
         # 顯示上傳檔案資訊
+        st.sidebar.markdown("---")
         st.sidebar.markdown("### 📂 已上傳檔案")
         for i, file in enumerate(uploaded_files, 1):
             file_size = len(file.getvalue()) / 1024
@@ -1442,20 +1633,53 @@ def main():
     else:
         st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件進行分析")
         
-        st.markdown("""
-        ### 📋 支援的檔案格式
+        # 在主頁面顯示歡迎信息和統計
+        col1, col2 = st.columns([2, 1])
         
-        - **🎮 GPUMon CSV** - GPU性能監控數據（溫度、功耗、頻率、使用率）
-        - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
-        - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
+        with col1:
+            st.markdown("""
+            ### 📋 支援的檔案格式
+            
+            - **🎮 GPUMon CSV** - GPU性能監控數據（溫度、功耗、頻率、使用率）
+            - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
+            - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
+            
+            ### 🔍 v10.0 新功能
+            
+            - **超詳細調試** - 完整顯示解析過程的每個步驟
+            - **智能重命名** - YOKOGAWA檔案自動使用Tag和CH名稱
+            - **表格優化** - 統計數據垂直顯示，無滾動條
+            - **預設值設定** - 自動選擇最相關的監控指標
+            - **訪問統計** - 追蹤平台使用情況和趨勢
+            """)
         
-        ### 🔍 v10.0 新功能
-        
-        - **超詳細調試** - 完整顯示解析過程的每個步驟
-        - **智能重命名** - YOKOGAWA檔案自動使用Tag和CH名稱
-        - **表格優化** - 統計數據垂直顯示，無滾動條
-        - **預設值設定** - 自動選擇最相關的監控指標
-        """)
+        with col2:
+            # 顯示今日統計卡片
+            if 'visit_counter' in st.session_state:
+                stats = st.session_state.visit_counter.get_stats()
+                
+                st.markdown("""
+                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+                           padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
+                    <h3 style="margin: 0; color: white;">📊 使用統計</h3>
+                    <hr style="border-color: rgba(255,255,255,0.3);">
+                    <p style="font-size: 1.2em; margin: 0.5rem 0;">
+                        <strong>總計：</strong> {total:,} 次訪問
+                    </p>
+                    <p style="font-size: 1em; margin: 0.5rem 0;">
+                        <strong>今日：</strong> {today} 次 | <strong>近7天：</strong> {recent} 次
+                    </p>
+                    <p style="font-size: 0.9em; margin: 0.5rem 0; opacity: 0.8;">
+                        活躍 {days} 天 | 平均每日 {avg:.1f} 次
+                    </p>
+                </div>
+                """.format(
+                    total=stats['total_visits'],
+                    today=stats['today_visits'],
+                    recent=stats['recent_7_days'],
+                    days=stats['active_days'],
+                    avg=stats['total_visits'] / max(stats['active_days'], 1)
+                ), unsafe_allow_html=True)
 
 if __name__ == "__main__":
     main()
