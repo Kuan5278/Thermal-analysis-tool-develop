@@ -824,17 +824,31 @@ class GPUMonRenderer:
         
         st.sidebar.markdown("#### 🎯 參數選擇")
         
+        # 尋找預設的左軸變數 (Temperature GPU)
+        default_left_index = 0
+        for i, col in enumerate(numeric_columns):
+            if 'Temperature GPU' in col and '(C)' in col:
+                default_left_index = i
+                break
+        
         left_y_axis = st.sidebar.selectbox(
             "📈 左側Y軸變數", 
             options=numeric_columns, 
-            index=0
+            index=default_left_index
         )
         
+        # 尋找預設的右軸變數 (TGP)
         right_y_axis_options = ['None'] + numeric_columns
+        default_right_index = 0
+        for i, col in enumerate(right_y_axis_options):
+            if 'TGP' in col and '(W)' in col:
+                default_right_index = i
+                break
+        
         right_y_axis = st.sidebar.selectbox(
             "📊 右側Y軸變數 (可選)", 
             options=right_y_axis_options, 
-            index=0
+            index=default_right_index
         )
         
         st.sidebar.markdown("#### ⏱️ 時間範圍設定")
@@ -879,25 +893,22 @@ class GPUMonRenderer:
             self.log_data, x_range
         )
         
-        col1, col2 = st.columns(2)
+        # 垂直排列顯示所有統計表格，避免併排放不下的問題
+        if temp_stats is not None and not temp_stats.empty:
+            st.markdown("#### 🌡️ GPU 溫度統計")
+            st.dataframe(temp_stats, use_container_width=True, hide_index=True)
         
-        with col1:
-            if temp_stats is not None and not temp_stats.empty:
-                st.markdown("#### 🌡️ GPU 溫度統計")
-                st.dataframe(temp_stats, use_container_width=True)
-            
-            if freq_stats is not None and not freq_stats.empty:
-                st.markdown("#### ⚡ GPU 頻率統計")
-                st.dataframe(freq_stats, use_container_width=True)
+        if power_stats is not None and not power_stats.empty:
+            st.markdown("#### 🔋 GPU 功耗統計")
+            st.dataframe(power_stats, use_container_width=True, hide_index=True)
         
-        with col2:
-            if power_stats is not None and not power_stats.empty:
-                st.markdown("#### 🔋 GPU 功耗統計")
-                st.dataframe(power_stats, use_container_width=True)
-            
-            if util_stats is not None and not util_stats.empty:
-                st.markdown("#### 📊 GPU 使用率統計")
-                st.dataframe(util_stats, use_container_width=True)
+        if freq_stats is not None and not freq_stats.empty:
+            st.markdown("#### ⚡ GPU 頻率統計")
+            st.dataframe(freq_stats, use_container_width=True, hide_index=True)
+        
+        if util_stats is not None and not util_stats.empty:
+            st.markdown("#### 📊 GPU 使用率統計")
+            st.dataframe(util_stats, use_container_width=True, hide_index=True)
     
     def render(self):
         """渲染完整UI"""
@@ -943,9 +954,25 @@ class PTATRenderer:
         numeric_columns = self.log_data.numeric_columns
         if numeric_columns:
             st.sidebar.markdown("### ⚙️ PTAT 圖表設定")
-            left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
+            
+            # 尋找預設的左軸變數 (MSR Package Temperature)
+            default_left_index = 0
+            for i, col in enumerate(numeric_columns):
+                if 'MSR' in col and 'Package' in col and 'Temperature' in col:
+                    default_left_index = i
+                    break
+            
+            left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=default_left_index)
+            
+            # 尋找預設的右軸變數 (Package Power)
             right_y_axis_options = ['None'] + numeric_columns
-            right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
+            default_right_index = 0
+            for i, col in enumerate(right_y_axis_options):
+                if 'Package' in col and 'Power' in col:
+                    default_right_index = i
+                    break
+            
+            right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=default_right_index)
             
             time_min, time_max = self.log_data.get_time_range()
             x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
@@ -956,26 +983,21 @@ class PTATRenderer:
             if chart:
                 st.pyplot(chart)
             
-            # 顯示統計數據
+            # 顯示統計數據 - 垂直排列
             st.markdown("### 📈 PTAT 統計數據")
             freq_stats, power_stats, temp_stats = self.stats_calc.calculate_ptat_stats(self.log_data, x_range)
             
-            col1, col2, col3 = st.columns(3)
+            if freq_stats is not None and not freq_stats.empty:
+                st.markdown("#### ⚡ CPU 頻率統計")
+                st.dataframe(freq_stats, use_container_width=True, hide_index=True)
             
-            with col1:
-                if freq_stats is not None and not freq_stats.empty:
-                    st.markdown("#### ⚡ CPU 頻率統計")
-                    st.dataframe(freq_stats, use_container_width=True)
+            if power_stats is not None and not power_stats.empty:
+                st.markdown("#### 🔋 Package 功耗統計")
+                st.dataframe(power_stats, use_container_width=True, hide_index=True)
             
-            with col2:
-                if power_stats is not None and not power_stats.empty:
-                    st.markdown("#### 🔋 Package 功耗統計")
-                    st.dataframe(power_stats, use_container_width=True)
-            
-            with col3:
-                if temp_stats is not None and not temp_stats.empty:
-                    st.markdown("#### 🌡️ Package 溫度統計")
-                    st.dataframe(temp_stats, use_container_width=True)
+            if temp_stats is not None and not temp_stats.empty:
+                st.markdown("#### 🌡️ Package 溫度統計")
+                st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
 class YokogawaRenderer:
     """YOKOGAWA UI渲染器"""
@@ -1032,7 +1054,7 @@ class YokogawaRenderer:
         st.markdown("### 📈 溫度統計數據")
         temp_stats = self.stats_calc.calculate_temp_stats(self.log_data, x_range)
         if not temp_stats.empty:
-            st.dataframe(temp_stats, use_container_width=True)
+            st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
 # =============================================================================
 # 7. UI工廠 (UI Factory)
@@ -1226,7 +1248,7 @@ def main():
                         stats_calc = StatisticsCalculator()
                         temp_stats = stats_calc.calculate_temp_stats(combined_log_data, x_range)
                         if not temp_stats.empty:
-                            st.dataframe(temp_stats, use_container_width=True)
+                            st.dataframe(temp_stats, use_container_width=True, hide_index=True)
                 
                 except Exception as e:
                     st.error(f"合併數據時出錯: {e}")
@@ -1257,7 +1279,7 @@ def main():
                     stats_calc = StatisticsCalculator()
                     temp_stats = stats_calc.calculate_temp_stats(log_data, x_range)
                     if not temp_stats.empty:
-                        st.dataframe(temp_stats, use_container_width=True)
+                        st.dataframe(temp_stats, use_container_width=True, hide_index=True)
     
     else:
         st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件進行分析")
