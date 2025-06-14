@@ -860,48 +860,264 @@ def main():
         # 顯示調試資訊
         st.markdown("### 🔍 檔案解析調試資訊")
         
+        # 解析檔案
+        dataframes = []
+        log_types = []
+        
+        for uploaded_file in uploaded_files:
+            df, log_type = parse_dispatcher(uploaded_file)
+            if df is not None:
+                dataframes.append(df)
+                log_types.append(log_type)
+        
+        if not dataframes:
+            st.error("❌ 無法解析任何檔案")
+            return
+        
+        # 檢查檔案類型
         if len(uploaded_files) == 1:
-            df_check, log_type_check = parse_dispatcher(uploaded_files[0])
-            is_single_yokogawa = (log_type_check == "YOKOGAWA Log")
-            is_single_gpumon = (log_type_check == "GPUMon Log")
+            is_single_yokogawa = (log_types[0] == "YOKOGAWA Log")
+            is_single_gpumon = (log_types[0] == "GPUMon Log")
+            is_single_ptat = (log_types[0] == "PTAT Log")
         else:
             is_single_yokogawa = False
             is_single_gpumon = False
+            is_single_ptat = False
         
-        # 其餘UI代碼與之前相同，但會顯示調試資訊...
-        
+        # 顯示解析結果
         if is_single_gpumon:
-            st.success(f"🎮 成功解析GPUMon檔案！")
+            st.markdown("""
+            <div class="gpumon-box">
+                <h4>🎮 GPUMon Log 成功解析！</h4>
+                <p>已識別為GPU監控數據，包含溫度、功耗、頻率等指標</p>
+            </div>
+            """, unsafe_allow_html=True)
             
-            # 繼續GPUMon的UI邏輯...
-            if df_check is not None:
-                st.sidebar.markdown("### ⚙️ GPUMon 圖表設定")
+            df = dataframes[0]
+            st.success(f"✅ 數據載入成功：{df.shape[0]} 行 × {df.shape[1]} 列")
+            
+            # GPUMon 專用控制介面
+            st.sidebar.markdown("### ⚙️ GPUMon 圖表設定")
+            
+            numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+            if numeric_columns:
+                st.sidebar.markdown("#### 🎯 參數選擇")
                 
-                numeric_columns = df_check.select_dtypes(include=['number']).columns.tolist()
+                left_y_axis = st.sidebar.selectbox(
+                    "📈 左側Y軸變數", 
+                    options=numeric_columns, 
+                    index=0
+                )
+                
+                right_y_axis_options = ['None'] + numeric_columns
+                right_y_axis = st.sidebar.selectbox(
+                    "📊 右側Y軸變數 (可選)", 
+                    options=right_y_axis_options, 
+                    index=0
+                )
+                
+                st.sidebar.markdown("#### ⏱️ 時間範圍設定")
+                
+                max_time = df.index.total_seconds().max()
+                x_range = st.sidebar.slider(
+                    "選擇時間範圍 (秒)",
+                    min_value=0.0,
+                    max_value=float(max_time),
+                    value=(0.0, float(max_time)),
+                    step=1.0
+                )
+                
+                st.sidebar.markdown("#### 📏 Y軸範圍設定")
+                y_range_enabled = st.sidebar.checkbox("啟用Y軸範圍限制")
+                
+                y_range = None
+                if y_range_enabled:
+                    y_min = st.sidebar.number_input("Y軸最小值", value=0.0)
+                    y_max = st.sidebar.number_input("Y軸最大值", value=100.0)
+                    y_range = (y_min, y_max)
+                
+                # 顯示GPUMon圖表
+                st.markdown("### 📊 GPUMon 性能監控圖表")
+                
+                chart = generate_gpumon_chart(df, left_y_axis, right_y_axis, x_range, y_range)
+                if chart:
+                    st.pyplot(chart)
+                else:
+                    st.warning("無法生成圖表，請檢查參數設定")
+                
+                # 顯示統計數據
+                st.markdown("### 📈 GPUMon 統計數據")
+                
+                temp_stats, power_stats, freq_stats, util_stats = calculate_gpumon_stats(df, x_range)
+                
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    if temp_stats is not None and not temp_stats.empty:
+                        st.markdown("#### 🌡️ GPU 溫度統計")
+                        st.dataframe(temp_stats, use_container_width=True)
+                    
+                    if freq_stats is not None and not freq_stats.empty:
+                        st.markdown("#### ⚡ GPU 頻率統計")
+                        st.dataframe(freq_stats, use_container_width=True)
+                
+                with col2:
+                    if power_stats is not None and not power_stats.empty:
+                        st.markdown("#### 🔋 GPU 功耗統計")
+                        st.dataframe(power_stats, use_container_width=True)
+                    
+                    if util_stats is not None and not util_stats.empty:
+                        st.markdown("#### 📊 GPU 使用率統計")
+                        st.dataframe(util_stats, use_container_width=True)
+        
+        elif is_single_ptat:
+            st.markdown("""
+            <div class="info-box">
+                <h4>🖥️ PTAT Log 成功解析！</h4>
+                <p>已識別為CPU性能監控數據，包含頻率、功耗、溫度等指標</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            df = dataframes[0]
+            st.success(f"✅ 數據載入成功：{df.shape[0]} 行 × {df.shape[1]} 列")
+            
+            # PTAT 專用控制介面
+            st.sidebar.markdown("### ⚙️ PTAT 圖表設定")
+            
+            numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
+            if numeric_columns:
+                left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
+                right_y_axis_options = ['None'] + numeric_columns
+                right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
+                
+                max_time = df.index.total_seconds().max()
+                x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=0.0, max_value=float(max_time), value=(0.0, float(max_time)), step=1.0)
+                
+                # 顯示PTAT圖表
+                st.markdown("### 📊 PTAT CPU 性能監控圖表")
+                chart = generate_flexible_chart(df, left_y_axis, right_y_axis, x_range)
+                if chart:
+                    st.pyplot(chart)
+                
+                # 顯示PTAT統計數據
+                st.markdown("### 📈 PTAT 統計數據")
+                freq_stats, power_stats, temp_stats = calculate_ptat_stats(df, x_range)
+                
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if freq_stats is not None and not freq_stats.empty:
+                        st.markdown("#### ⚡ CPU 頻率統計")
+                        st.dataframe(freq_stats, use_container_width=True)
+                
+                with col2:
+                    if power_stats is not None and not power_stats.empty:
+                        st.markdown("#### 🔋 Package 功耗統計")
+                        st.dataframe(power_stats, use_container_width=True)
+                
+                with col3:
+                    if temp_stats is not None and not temp_stats.empty:
+                        st.markdown("#### 🌡️ Package 溫度統計")
+                        st.dataframe(temp_stats, use_container_width=True)
+        
+        elif is_single_yokogawa:
+            st.markdown("""
+            <div class="success-box">
+                <h4>📊 YOKOGAWA Log 成功解析！</h4>
+                <p>已識別為溫度記錄儀數據，支援多通道溫度監控</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            df = dataframes[0]
+            st.success(f"✅ 數據載入成功：{df.shape[0]} 行 × {df.shape[1]} 列")
+            
+            # YOKOGAWA 專用控制介面
+            st.sidebar.markdown("### ⚙️ YOKOGAWA 圖表設定")
+            
+            chart_mode = st.sidebar.radio("📈 圖表模式", ["全通道溫度圖", "自定義雙軸圖"])
+            
+            max_time = df.index.total_seconds().max()
+            x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=0.0, max_value=float(max_time), value=(0.0, float(max_time)), step=1.0)
+            
+            if chart_mode == "全通道溫度圖":
+                y_range_enabled = st.sidebar.checkbox("啟用Y軸範圍限制")
+                y_range = None
+                if y_range_enabled:
+                    y_min = st.sidebar.number_input("Y軸最小值", value=0.0)
+                    y_max = st.sidebar.number_input("Y軸最大值", value=100.0)
+                    y_range = (y_min, y_max)
+                
+                st.markdown("### 📊 YOKOGAWA 全通道溫度圖表")
+                chart = generate_yokogawa_temp_chart(df, x_range, y_range)
+                if chart:
+                    st.pyplot(chart)
+            
+            else:
+                numeric_columns = df.select_dtypes(include=['number']).columns.tolist()
                 if numeric_columns:
-                    st.sidebar.markdown("#### 🎯 參數選擇")
-                    
-                    left_y_axis = st.sidebar.selectbox(
-                        "📈 左側Y軸變數", 
-                        options=numeric_columns, 
-                        index=0
-                    )
-                    
+                    left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
                     right_y_axis_options = ['None'] + numeric_columns
-                    right_y_axis = st.sidebar.selectbox(
-                        "📊 右側Y軸變數 (可選)", 
-                        options=right_y_axis_options, 
-                        index=0
-                    )
+                    right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
                     
-                    st.markdown("### 🎮 GPUMon 數據分析")
-                    st.success(f"✅ 數據載入成功：{df_check.shape[0]} 行 × {df_check.shape[1]} 列")
+                    st.markdown("### 📊 YOKOGAWA 自定義圖表")
+                    chart = generate_flexible_chart(df, left_y_axis, right_y_axis, x_range)
+                    if chart:
+                        st.pyplot(chart)
+            
+            # 顯示溫度統計
+            st.markdown("### 📈 溫度統計數據")
+            temp_stats = calculate_temp_stats(df, x_range)
+            if not temp_stats.empty:
+                st.dataframe(temp_stats, use_container_width=True)
         
         else:
-            st.info("📊 請上傳GPUMon CSV檔案進行測試")
+            st.info("📊 多檔案模式或混合格式，請使用基本分析功能")
+            
+            # 合併多個DataFrame
+            if len(dataframes) > 1:
+                try:
+                    combined_df = pd.concat(dataframes, axis=1)
+                    st.success(f"✅ 合併數據載入成功：{combined_df.shape[0]} 行 × {combined_df.shape[1]} 列")
+                    
+                    numeric_columns = combined_df.select_dtypes(include=['number']).columns.tolist()
+                    if numeric_columns:
+                        st.sidebar.markdown("### ⚙️ 圖表設定")
+                        left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
+                        right_y_axis_options = ['None'] + numeric_columns
+                        right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
+                        
+                        max_time = combined_df.index.total_seconds().max()
+                        x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=0.0, max_value=float(max_time), value=(0.0, float(max_time)), step=1.0)
+                        
+                        st.markdown("### 📊 綜合數據圖表")
+                        chart = generate_flexible_chart(combined_df, left_y_axis, right_y_axis, x_range)
+                        if chart:
+                            st.pyplot(chart)
+                
+                except Exception as e:
+                    st.error(f"合併數據時出錯: {e}")
+            
+            else:
+                df = dataframes[0]
+                st.success(f"✅ 數據載入成功：{df.shape[0]} 行 × {df.shape[1]} 列")
     
     else:
-        st.info("🚀 **開始使用** - 請在左側上傳您的 GPUMon.csv 文件進行測試")
+        st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件進行分析")
+        
+        st.markdown("""
+        ### 📋 支援的檔案格式
+        
+        - **🎮 GPUMon CSV** - GPU性能監控數據（溫度、功耗、頻率、使用率）
+        - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
+        - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
+        
+        ### 🔧 主要功能
+        
+        - **智能格式識別** - 自動識別並解析不同類型的Log文件
+        - **多維度統計分析** - 提供詳細的統計數據表格
+        - **動態圖表生成** - 支援單軸/雙軸圖表，可自定義時間和數值範圍
+        - **專業級視覺化** - 針對不同數據類型優化的圖表樣式
+        """)
 
 if __name__ == "__main__":
     main()
