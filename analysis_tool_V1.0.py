@@ -1633,53 +1633,21 @@ def main():
     else:
         st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件進行分析")
         
-        # 在主頁面顯示歡迎信息和統計
-        col1, col2 = st.columns([2, 1])
+        st.markdown("""
+        ### 📋 支援的檔案格式
         
-        with col1:
-            st.markdown("""
-            ### 📋 支援的檔案格式
-            
-            - **🎮 GPUMon CSV** - GPU性能監控數據（溫度、功耗、頻率、使用率）
-            - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
-            - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
-            
-            ### 🔍 v10.0 新功能
-            
-            - **超詳細調試** - 完整顯示解析過程的每個步驟
-            - **智能重命名** - YOKOGAWA檔案自動使用Tag和CH名稱
-            - **表格優化** - 統計數據垂直顯示，無滾動條
-            - **預設值設定** - 自動選擇最相關的監控指標
-            - **訪問統計** - 追蹤平台使用情況和趨勢
-            """)
+        - **🎮 GPUMon CSV** - GPU性能監控數據（溫度、功耗、頻率、使用率）
+        - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
+        - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
         
-        with col2:
-            # 顯示今日統計卡片
-            if 'visit_counter' in st.session_state:
-                stats = st.session_state.visit_counter.get_stats()
-                
-                st.markdown("""
-                <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
-                           padding: 1.5rem; border-radius: 10px; color: white; text-align: center;">
-                    <h3 style="margin: 0; color: white;">📊 使用統計</h3>
-                    <hr style="border-color: rgba(255,255,255,0.3);">
-                    <p style="font-size: 1.2em; margin: 0.5rem 0;">
-                        <strong>總計：</strong> {total:,} 次訪問
-                    </p>
-                    <p style="font-size: 1em; margin: 0.5rem 0;">
-                        <strong>今日：</strong> {today} 次 | <strong>近7天：</strong> {recent} 次
-                    </p>
-                    <p style="font-size: 0.9em; margin: 0.5rem 0; opacity: 0.8;">
-                        活躍 {days} 天 | 平均每日 {avg:.1f} 次
-                    </p>
-                </div>
-                """.format(
-                    total=stats['total_visits'],
-                    today=stats['today_visits'],
-                    recent=stats['recent_7_days'],
-                    days=stats['active_days'],
-                    avg=stats['total_visits'] / max(stats['active_days'], 1)
-                ), unsafe_allow_html=True)
+        ### 🔍 v10.1 新功能
+        
+        - **超詳細調試** - 完整顯示解析過程的每個步驟
+        - **智能重命名** - YOKOGAWA檔案自動使用Tag和CH名稱
+        - **表格優化** - 統計數據垂直顯示，無滾動條
+        - **預設值設定** - 自動選擇最相關的監控指標
+        - **訪問統計** - 追蹤平台使用情況和趨勢
+        """)
 
 if __name__ == "__main__":
     main()
