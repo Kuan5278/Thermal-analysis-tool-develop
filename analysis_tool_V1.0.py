@@ -664,8 +664,22 @@ class StatisticsCalculator:
             if not y_data.isna().all():
                 t_max = y_data.max()
                 t_avg = y_data.mean()
+                
+                # 清理顯示名稱 - 移除前綴並顯示更友好的名稱
+                display_name = col
+                if display_name.startswith('YOKO: '):
+                    display_name = display_name.replace('YOKO: ', '')
+                elif display_name.startswith('PTAT: '):
+                    display_name = display_name.replace('PTAT: ', '')
+                elif display_name.startswith('GPU: '):
+                    display_name = display_name.replace('GPU: ', '')
+                
+                # 排除明顯的非溫度欄位
+                if display_name.lower() in ['sec', 'time', 'rt', 'date']:
+                    continue
+                
                 stats_data.append({
-                    '通道名稱': col,
+                    '通道名稱': display_name,
                     'Tmax (°C)': f"{t_max:.2f}" if pd.notna(t_max) else "N/A",
                     'Tavg (°C)': f"{t_avg:.2f}" if pd.notna(t_avg) else "N/A"
                 })
