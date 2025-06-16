@@ -1494,7 +1494,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>📊 溫度數據視覺化平台</h1>
-        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件，提供專業級數據分析與視覺化</p>
+        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件，提供數據分析與視覺化</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
