@@ -1,5 +1,5 @@
 # thermal_analysis_platform_v10.py
-# 溫度數據視覺化平台 - v10 完整最新版 - 功耗項目優化
+# 溫度數據視覺化平台 - v10.2 雙軸Y範圍控制版
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.1 Stats Optimized"
+VERSION = "v10.2 Dual-Axis Range Control"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -1055,7 +1055,7 @@ class ChartGenerator:
     """圖表生成器"""
     
     @staticmethod
-    def generate_gpumon_chart(log_data: LogData, left_col: str, right_col: str, x_limits, y_limits=None):
+    def generate_gpumon_chart(log_data: LogData, left_col: str, right_col: str, x_limits, left_y_limits=None, right_y_limits=None):
         """生成GPUMon專用圖表"""
         df = log_data.filter_by_time(x_limits)
         
@@ -1082,8 +1082,9 @@ class ChartGenerator:
         ax1.tick_params(axis='y', labelcolor=color)
         ax1.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
         
-        if y_limits:
-            ax1.set_ylim(y_limits)
+        # 設定左側Y軸範圍
+        if left_y_limits:
+            ax1.set_ylim(left_y_limits)
         
         if right_col and right_col != 'None':
             ax2 = ax1.twinx()
@@ -1091,6 +1092,10 @@ class ChartGenerator:
             ax2.set_ylabel(right_col.replace("GPU: ", ""), color=color, fontsize=11)
             ax2.plot(x_axis_seconds, df_chart['right_val'], color=color, linewidth=2)
             ax2.tick_params(axis='y', labelcolor=color)
+            
+            # 設定右側Y軸範圍
+            if right_y_limits:
+                ax2.set_ylim(right_y_limits)
         
         if x_limits:
             ax1.set_xlim(x_limits)
@@ -1099,7 +1104,7 @@ class ChartGenerator:
         return fig
     
     @staticmethod
-    def generate_flexible_chart(log_data: LogData, left_col: str, right_col: str, x_limits, y_limits=None):
+    def generate_flexible_chart(log_data: LogData, left_col: str, right_col: str, x_limits, left_y_limits=None, right_y_limits=None):
         """生成靈活的雙軸圖表"""
         df = log_data.filter_by_time(x_limits)
         
@@ -1124,8 +1129,9 @@ class ChartGenerator:
         ax1.tick_params(axis='y', labelcolor=color)
         ax1.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
         
-        if y_limits:
-            ax1.set_ylim(y_limits)
+        # 設定左側Y軸範圍
+        if left_y_limits:
+            ax1.set_ylim(left_y_limits)
         
         if right_col and right_col != 'None':
             ax2 = ax1.twinx()
@@ -1133,6 +1139,10 @@ class ChartGenerator:
             ax2.set_ylabel(right_col, color=color, fontsize=11)
             ax2.plot(x_axis_seconds, df_chart['right_val'], color=color, linewidth=1.5)
             ax2.tick_params(axis='y', labelcolor=color)
+            
+            # 設定右側Y軸範圍
+            if right_y_limits:
+                ax2.set_ylim(right_y_limits)
         
         if x_limits:
             ax1.set_xlim(x_limits)
@@ -1197,7 +1207,7 @@ class GPUMonRenderer:
         
         numeric_columns = self.log_data.numeric_columns
         if not numeric_columns:
-            return None, None, None, None
+            return None, None, None, None, None
         
         st.sidebar.markdown("#### 🎯 參數選擇")
         
@@ -1240,22 +1250,38 @@ class GPUMonRenderer:
         )
         
         st.sidebar.markdown("#### 📏 Y軸範圍設定")
-        y_range_enabled = st.sidebar.checkbox("啟用Y軸範圍限制")
         
-        y_range = None
-        if y_range_enabled:
-            y_min = st.sidebar.number_input("Y軸最小值", value=0.0)
-            y_max = st.sidebar.number_input("Y軸最大值", value=100.0)
-            y_range = (y_min, y_max)
+        # 左側Y軸範圍設定
+        left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制")
+        left_y_range = None
+        if left_y_range_enabled:
+            col1, col2 = st.sidebar.columns(2)
+            with col1:
+                left_y_min = st.number_input("左Y軸最小值", value=0.0, key="left_y_min")
+            with col2:
+                left_y_max = st.number_input("左Y軸最大值", value=100.0, key="left_y_max")
+            left_y_range = (left_y_min, left_y_max)
         
-        return left_y_axis, right_y_axis, x_range, y_range
+        # 右側Y軸範圍設定（只有在選擇右軸變數時才顯示）
+        right_y_range = None
+        if right_y_axis and right_y_axis != 'None':
+            right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制")
+            if right_y_range_enabled:
+                col1, col2 = st.sidebar.columns(2)
+                with col1:
+                    right_y_min = st.number_input("右Y軸最小值", value=0.0, key="right_y_min")
+                with col2:
+                    right_y_max = st.number_input("右Y軸最大值", value=100.0, key="right_y_max")
+                right_y_range = (right_y_min, right_y_max)
+        
+        return left_y_axis, right_y_axis, x_range, left_y_range, right_y_range
     
-    def render_chart(self, left_col, right_col, x_range, y_range):
+    def render_chart(self, left_col, right_col, x_range, left_y_range, right_y_range):
         """渲染圖表"""
         st.markdown("### 📊 GPUMon 性能監控圖表")
         
         chart = self.chart_gen.generate_gpumon_chart(
-            self.log_data, left_col, right_col, x_range, y_range
+            self.log_data, left_col, right_col, x_range, left_y_range, right_y_range
         )
         if chart:
             st.pyplot(chart)
@@ -1299,11 +1325,11 @@ class GPUMonRenderer:
         st.success(f"✅ 數據載入成功：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
         # 渲染控制面板
-        left_col, right_col, x_range, y_range = self.render_controls()
+        left_col, right_col, x_range, left_y_range, right_y_range = self.render_controls()
         
         if left_col:
             # 渲染圖表
-            self.render_chart(left_col, right_col, x_range, y_range)
+            self.render_chart(left_col, right_col, x_range, left_y_range, right_y_range)
             
             # 渲染統計數據
             self.render_statistics(x_range)
@@ -1464,11 +1490,12 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🆕 v10.1 Stats Optimized 更新內容：
-        - 🔋 **PTAT 功耗統計優化** - 只顯示 IA Power、GT Power、Rest of Package Power、Package Power
-        - 🎮 **GPUMon 功耗統計優化** - 只顯示 NVVDD Power、FBVDD Power、TGP (W)
-        - 🎯 **精確匹配邏輯** - 更準確的功耗項目識別與過濾
-        - 📊 **統計表格簡化** - 移除不必要的功耗項目，聚焦核心指標
+        ### 🆕 v10.2 Dual-Axis Range Control 更新內容：
+        - 📏 **雙軸Y範圍控制** - 可分別設定左右Y軸的顯示範圍
+        - 🔵 **左側Y軸範圍** - 獨立控制左側Y軸的最小值和最大值
+        - 🔴 **右側Y軸範圍** - 獨立控制右側Y軸的最小值和最大值（雙軸模式時）
+        - 🎯 **智能顯示控制** - 只有選擇右軸變數時才顯示右軸範圍設定
+        - 🔋 **功耗統計優化** - 保持 PTAT 4項核心功耗，GPUMon 3項關鍵功耗
         
         ### 🏗️ 架構優勢：
         - 分層架構設計，高擴展性
@@ -1482,7 +1509,7 @@ def display_version_info():
         """)
 
 def main():
-    """主程式 - v10.1 Stats Optimized"""
+    """主程式 - v10.2 Dual-Axis Range Control"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1684,12 +1711,12 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
         
-        ### 🔍 v10.1 Stats Optimized 新功能
+        ### 🔍 v10.2 Dual-Axis Range Control 新功能
         
-        - **🔋 功耗統計優化** - 只顯示核心功耗指標，數據更聚焦
-        - **🎯 精確匹配** - 智能識別並過濾最重要的功耗項目
-        - **📊 表格簡化** - 移除不必要項目，提升閱讀體驗
-        - **💡 數據聚焦** - PTAT 4項核心功耗，GPUMon 3項關鍵功耗
+        - **📏 雙軸Y範圍控制** - 可分別設定左右Y軸的顯示範圍
+        - **🎯 精確圖表控制** - 左右Y軸獨立調整，數據顯示更精確
+        - **🔋 功耗統計優化** - PTAT 4項核心功耗，GPUMon 3項關鍵功耗
+        - **🔵🔴 視覺化標示** - 藍色圓點標示左軸，紅色圓點標示右軸
         - **訪問統計** - 持續追蹤平台使用情況和趨勢
         """)
 
