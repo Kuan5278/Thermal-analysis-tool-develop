@@ -1441,7 +1441,7 @@ def main():
     """主程式 - v10.0"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
-        page_icon="🎮",
+        page_icon="📊",
         layout="wide",
         initial_sidebar_state="expanded"
     )
@@ -1493,7 +1493,7 @@ def main():
     # 標題
     st.markdown(f"""
     <div class="main-header">
-        <h1>🎮 溫度數據視覺化平台</h1>
+        <h1>📊 溫度數據視覺化平台</h1>
         <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件，提供專業級數據分析與視覺化</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
