@@ -1,5 +1,5 @@
 # thermal_analysis_platform_v10.py
-# 溫度數據視覺化平台 - v10 完整最新版
+# 溫度數據視覺化平台 - v10 完整最新版 - 功耗項目優化
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.1 Stats"
+VERSION = "v10.1 Stats Optimized"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -784,7 +784,7 @@ class ParserRegistry:
         return None
 
 # =============================================================================
-# 4. 統計計算層 (Statistics Layer)
+# 4. 統計計算層 (Statistics Layer) - 功耗項目優化版本
 # =============================================================================
 
 class StatisticsCalculator:
@@ -813,19 +813,34 @@ class StatisticsCalculator:
         
         temp_df = pd.DataFrame(temp_stats) if temp_stats else None
         
-        # GPU功耗統計
+        # GPU功耗統計 - 只顯示指定的三個項目
         power_stats = []
-        power_cols = [col for col in df.columns if 'Power' in col and any(x in col for x in ['NVVDD', 'FBVDD', 'MSVDD', 'Total System'])]
+        # 指定的功耗項目：NVVDD power, FBVDD power, TGP (W)
+        target_power_items = ['NVVDD', 'FBVDD', 'TGP']
         
-        for col in power_cols:
-            power_data = pd.to_numeric(df[col], errors='coerce').dropna()
-            if len(power_data) > 0:
-                power_stats.append({
-                    'Power Rail': col.replace('GPU: ', ''),
-                    'Max (W)': f"{power_data.max():.2f}",
-                    'Min (W)': f"{power_data.min():.2f}",
-                    'Avg (W)': f"{power_data.mean():.2f}"
-                })
+        for target_item in target_power_items:
+            # 尋找包含目標項目的欄位
+            matching_cols = [col for col in df.columns if target_item in col and ('Power' in col or 'TGP' in col)]
+            
+            for col in matching_cols:
+                power_data = pd.to_numeric(df[col], errors='coerce').dropna()
+                if len(power_data) > 0:
+                    # 清理顯示名稱
+                    display_name = col.replace('GPU: ', '')
+                    if 'NVVDD' in col:
+                        display_name = 'NVVDD Power'
+                    elif 'FBVDD' in col:
+                        display_name = 'FBVDD Power'
+                    elif 'TGP' in col:
+                        display_name = 'TGP (W)'
+                    
+                    power_stats.append({
+                        'Power Rail': display_name,
+                        'Max (W)': f"{power_data.max():.2f}",
+                        'Min (W)': f"{power_data.min():.2f}",
+                        'Avg (W)': f"{power_data.mean():.2f}"
+                    })
+                    break  # 找到一個就停止，避免重複
         
         power_df = pd.DataFrame(power_stats) if power_stats else None
         
@@ -931,19 +946,48 @@ class StatisticsCalculator:
         
         freq_df = pd.DataFrame(freq_stats) if freq_stats else None
         
-        # Package Power 統計
+        # Package Power 統計 - 只顯示指定的四個項目
         power_stats = []
-        power_cols = [col for col in df.columns if 'power' in col.lower() and 'package' in col.lower()]
+        # 指定的功耗項目：IA power, GT power, Rest of package power, package power
+        target_power_items = [
+            ('IA', 'IA Power'),
+            ('GT', 'GT Power'), 
+            ('Rest of package', 'Rest of Package Power'),
+            ('Package', 'Package Power')
+        ]
         
-        for col in power_cols:
-            power_data = pd.to_numeric(df[col], errors='coerce').dropna()
-            if len(power_data) > 0:
-                power_stats.append({
-                    'Power Type': col.replace('PTAT: ', ''),
-                    'Max (W)': f"{power_data.max():.2f}",
-                    'Min (W)': f"{power_data.min():.2f}",
-                    'Avg (W)': f"{power_data.mean():.2f}"
-                })
+        for search_term, display_name in target_power_items:
+            # 尋找包含目標項目的欄位
+            matching_cols = []
+            for col in df.columns:
+                col_lower = col.lower()
+                search_lower = search_term.lower()
+                
+                # 更精確的匹配邏輯
+                if search_term == 'IA':
+                    if 'ia' in col_lower and 'power' in col_lower and 'via' not in col_lower:
+                        matching_cols.append(col)
+                elif search_term == 'GT':
+                    if 'gt' in col_lower and 'power' in col_lower and 'tgp' not in col_lower:
+                        matching_cols.append(col)
+                elif search_term == 'Rest of package':
+                    if 'rest' in col_lower and 'package' in col_lower and 'power' in col_lower:
+                        matching_cols.append(col)
+                elif search_term == 'Package':
+                    if 'package' in col_lower and 'power' in col_lower and 'rest' not in col_lower:
+                        matching_cols.append(col)
+            
+            # 如果找到匹配的欄位，取第一個
+            if matching_cols:
+                col = matching_cols[0]
+                power_data = pd.to_numeric(df[col], errors='coerce').dropna()
+                if len(power_data) > 0:
+                    power_stats.append({
+                        'Power Type': display_name,
+                        'Max (W)': f"{power_data.max():.2f}",
+                        'Min (W)': f"{power_data.min():.2f}",
+                        'Avg (W)': f"{power_data.mean():.2f}"
+                    })
         
         power_df = pd.DataFrame(power_stats) if power_stats else None
         
@@ -1420,25 +1464,25 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🆕 v10.0 更新內容：
-        - 🔍 **超詳細調試功能** - 完整的YOKOGAWA解析過程跟蹤
-        - 🏷️ **智能欄位重命名** - 第29行Tag優先，空白用第28行CH
-        - 📊 **統計表格優化** - 垂直顯示，移除滾動條，完整數據展示
-        - 🎯 **預設值設定** - GPUMon/PTAT自動選擇最相關的監控指標
-        - 🐛 **問題修復** - 解決重命名邏輯不生效的問題
+        ### 🆕 v10.1 Stats Optimized 更新內容：
+        - 🔋 **PTAT 功耗統計優化** - 只顯示 IA Power、GT Power、Rest of Package Power、Package Power
+        - 🎮 **GPUMon 功耗統計優化** - 只顯示 NVVDD Power、FBVDD Power、TGP (W)
+        - 🎯 **精確匹配邏輯** - 更準確的功耗項目識別與過濾
+        - 📊 **統計表格簡化** - 移除不必要的功耗項目，聚焦核心指標
         
         ### 🏗️ 架構優勢：
         - 分層架構設計，高擴展性
         - 可插拔解析器系統
         - UI組件化渲染
         - 統一數據模型
+        - 智能功耗項目過濾
         
         ---
-        💡 **使用提示：** 現在會顯示超詳細的解析過程，幫助你了解每個步驟的執行情況
+        💡 **功耗統計焦點：** 現在只顯示最關鍵的功耗指標，讓數據分析更聚焦！
         """)
 
 def main():
-    """主程式 - v10.0"""
+    """主程式 - v10.1 Stats Optimized"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1640,13 +1684,13 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
         
-        ### 🔍 v10.1 新功能
+        ### 🔍 v10.1 Stats Optimized 新功能
         
-        - **超詳細調試** - 完整顯示解析過程的每個步驟
-        - **智能重命名** - YOKOGAWA檔案自動使用Tag和CH名稱
-        - **表格優化** - 統計數據垂直顯示，無滾動條
-        - **預設值設定** - 自動選擇最相關的監控指標
-        - **訪問統計** - 追蹤平台使用情況和趨勢
+        - **🔋 功耗統計優化** - 只顯示核心功耗指標，數據更聚焦
+        - **🎯 精確匹配** - 智能識別並過濾最重要的功耗項目
+        - **📊 表格簡化** - 移除不必要項目，提升閱讀體驗
+        - **💡 數據聚焦** - PTAT 4項核心功耗，GPUMon 3項關鍵功耗
+        - **訪問統計** - 持續追蹤平台使用情況和趨勢
         """)
 
 if __name__ == "__main__":
