@@ -1,5 +1,5 @@
-# thermal_analysis_platform_v10.3.py
-# 溫度數據視覺化平台 - v10.3 動態關鍵字搜索版
+# thermal_analysis_platform_v10.3.1.py
+# 溫度數據視覺化平台 - v10.3.1 動態關鍵字搜索修正版
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3 Dynamic Keyword Search"
+VERSION = "v10.3.1 Dynamic Keyword Search - Fixed"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -682,14 +682,14 @@ class YokogawaParser(LogParser):
         return possible_headers
     
     def _find_ch_tag_rows(self, file_content: io.BytesIO, header_row: int) -> Tuple[Optional[int], Optional[int]]:
-        """🆕 動態尋找CH行和Tag行"""
+        """🆕 動態尋找CH行和Tag行 - 修正版"""
         ch_row_idx = None
         tag_row_idx = None
         
         st.write(f"🔍 在header行({header_row+1})附近搜索CH和Tag行...")
         
-        # 在header行附近搜索 (通常在header行前面1-5行)
-        search_range = range(max(0, header_row - 8), header_row + 2)  # 擴大搜索範圍
+        # 只在header行前面搜索，避免將數據行誤認為Tag行
+        search_range = range(max(0, header_row - 5), header_row)  # 只搜索header行前面
         
         for idx in search_range:
             try:
@@ -703,67 +703,109 @@ class YokogawaParser(LogParser):
                     ch_row_idx = idx
                     st.write(f"  🎯 找到CH行在第{idx+1}行 (含{ch_count}個CH欄位)")
                 
-                # 檢查是否為Tag行 (包含Tag或其他描述性內容)
-                tag_indicators = ['TAG', 'TEMP', 'SENSOR', 'CHANNEL']
-                has_tag_keywords = any(indicator in row_str for indicator in tag_indicators)
-                has_descriptive_content = any(
-                    len(str(val).strip()) > 5 and not str(val).strip().upper().startswith('CH') 
-                    for val in test_row if pd.notna(val)
-                )
-                
-                if has_tag_keywords or has_descriptive_content:
-                    tag_row_idx = idx
-                    indicators_found = [ind for ind in tag_indicators if ind in row_str]
-                    st.write(f"  🎯 找到可能的Tag行在第{idx+1}行 (關鍵詞: {indicators_found})")
+                # 🔧 改進的Tag行識別邏輯
+                # 避免數據行被誤認為Tag行
+                if idx < header_row - 1:  # 只考慮header行前至少2行的位置
+                    tag_indicators = ['TAG', 'TEMP', 'SENSOR', 'CHANNEL', 'POINT']
+                    has_tag_keywords = any(indicator in row_str for indicator in tag_indicators)
+                    
+                    # 檢查是否有描述性內容，但排除純數字行（數據行特徵）
+                    descriptive_values = []
+                    numeric_values = 0
+                    for val in test_row:
+                        if pd.notna(val):
+                            val_str = str(val).strip()
+                            # 排除CH開頭的值
+                            if not val_str.upper().startswith('CH') and len(val_str) > 0:
+                                try:
+                                    float(val_str)
+                                    numeric_values += 1
+                                except ValueError:
+                                    if len(val_str) > 2:  # 有意義的描述文字
+                                        descriptive_values.append(val_str)
+                    
+                    # 如果大部分是數字，很可能是數據行而不是Tag行
+                    total_meaningful_values = len(descriptive_values) + numeric_values
+                    is_likely_data_row = (numeric_values > total_meaningful_values * 0.7) if total_meaningful_values > 0 else False
+                    
+                    if (has_tag_keywords or len(descriptive_values) >= 3) and not is_likely_data_row:
+                        tag_row_idx = idx
+                        indicators_found = [ind for ind in tag_indicators if ind in row_str]
+                        st.write(f"  🎯 找到可能的Tag行在第{idx+1}行 (關鍵詞: {indicators_found}, 描述項: {len(descriptive_values)})")
                     
             except Exception:
                 continue
         
-        # 智能配對：如果找到CH行但沒找到Tag行，嘗試CH行的相鄰行
+        # 🔧 更嚴格的配對邏輯
         if ch_row_idx is not None and tag_row_idx is None:
-            # 嘗試CH行的下一行
-            try:
-                candidate_tag_row = ch_row_idx + 1
-                file_content.seek(0)
-                test_row = pd.read_excel(file_content, header=None, skiprows=candidate_tag_row, nrows=1).iloc[0]
-                non_ch_content = [val for val in test_row if pd.notna(val) and not str(val).strip().upper().startswith('CH')]
-                if len(non_ch_content) >= 3:  # 有足夠的非CH內容
-                    tag_row_idx = candidate_tag_row
-                    st.write(f"  📝 使用CH行的下一行作為Tag行: 第{tag_row_idx+1}行")
-            except Exception:
-                pass
-            
-            # 如果下一行不行，嘗試上一行
-            if tag_row_idx is None and ch_row_idx > 0:
+            # 只嘗試CH行的緊鄰上一行作為Tag行
+            if ch_row_idx > 0:
                 try:
                     candidate_tag_row = ch_row_idx - 1
                     file_content.seek(0)
                     test_row = pd.read_excel(file_content, header=None, skiprows=candidate_tag_row, nrows=1).iloc[0]
-                    non_ch_content = [val for val in test_row if pd.notna(val) and not str(val).strip().upper().startswith('CH')]
-                    if len(non_ch_content) >= 3:
+                    
+                    # 檢查是否適合作為Tag行（不是純數字行）
+                    non_ch_content = []
+                    numeric_count = 0
+                    for val in test_row:
+                        if pd.notna(val):
+                            val_str = str(val).strip()
+                            if not val_str.upper().startswith('CH') and len(val_str) > 0:
+                                try:
+                                    float(val_str)
+                                    numeric_count += 1
+                                except ValueError:
+                                    non_ch_content.append(val_str)
+                    
+                    # 如果非CH內容足夠且不全是數字，才認為是Tag行
+                    total_content = len(non_ch_content) + numeric_count
+                    if total_content >= 3 and numeric_count < total_content * 0.8:
                         tag_row_idx = candidate_tag_row
                         st.write(f"  📝 使用CH行的上一行作為Tag行: 第{tag_row_idx+1}行")
+                    else:
+                        st.write(f"  ⚠️ CH行上一行看起來像數據行，跳過Tag行識別")
                 except Exception:
                     pass
         
-        # 最終結果
+        # 最終結果和驗證
         if ch_row_idx is not None and tag_row_idx is not None:
-            st.write(f"✅ 動態搜索成功！CH行: {ch_row_idx+1}, Tag行: {tag_row_idx+1}")
+            # 額外驗證：確保Tag行不是header行後的數據行
+            if tag_row_idx >= header_row:
+                st.write(f"  ⚠️ Tag行位置({tag_row_idx+1})在header行之後，取消Tag行識別")
+                tag_row_idx = None
+            else:
+                st.write(f"✅ 動態搜索成功！CH行: {ch_row_idx+1}, Tag行: {tag_row_idx+1}")
         elif ch_row_idx is not None:
-            st.write(f"⚠️ 只找到CH行: {ch_row_idx+1}，未找到Tag行")
+            st.write(f"⚠️ 只找到CH行: {ch_row_idx+1}，未找到合適的Tag行")
         else:
             st.write("❌ 未找到CH/Tag行，可能是部分擷取的檔案")
         
         return ch_row_idx, tag_row_idx
     
     def _perform_renaming(self, df: pd.DataFrame, ch_row: pd.Series, tag_row: pd.Series) -> pd.DataFrame:
-        """執行重命名邏輯"""
+        """執行重命名邏輯 - 修正版，保護關鍵欄位"""
         st.write("🔄 開始智能重命名處理...")
+        
+        # 🔧 定義需要保護的關鍵欄位（不應被重命名）
+        protected_columns = {
+            'Date', 'TIME', 'Time', 'time', 'DATE', 'date',
+            'DateTime', 'DATETIME', 'datetime', 
+            'Timestamp', 'TIMESTAMP', 'timestamp',
+            'sec', 'SEC', 'RT', 'rt', '時間', '日期時間'
+        }
         
         new_column_names = {}
         rename_log = []
         
         for i, original_col in enumerate(df.columns):
+            # 🛡️ 保護關鍵欄位，不進行重命名
+            if original_col in protected_columns:
+                final_name = original_col
+                rename_log.append(f"欄位{i+1}: '{original_col}' → 保護欄位，保持原名")
+                new_column_names[original_col] = final_name
+                continue
+            
             # 獲取CH和Tag名稱
             ch_name = ""
             tag_name = ""
@@ -771,14 +813,39 @@ class YokogawaParser(LogParser):
             if i < len(ch_row):
                 ch_val = ch_row.iloc[i]
                 if pd.notna(ch_val) and str(ch_val).strip() not in ['nan', 'NaN', '', ' ', 'None']:
-                    ch_name = str(ch_val).strip()
+                    ch_val_str = str(ch_val).strip()
+                    # 🔧 額外驗證：確保不是數據值（避免將數據當作CH名稱）
+                    try:
+                        # 如果能轉換為浮點數且不是CH格式，可能是數據值
+                        float(ch_val_str)
+                        if not (ch_val_str.upper().startswith('CH') or 'CH' in ch_val_str.upper()):
+                            ch_val_str = ""  # 跳過數據值
+                        else:
+                            ch_name = ch_val_str
+                    except ValueError:
+                        # 不是數字，可能是真正的CH名稱
+                        ch_name = ch_val_str
             
             if i < len(tag_row):
                 tag_val = tag_row.iloc[i]
                 if pd.notna(tag_val) and str(tag_val).strip() not in ['nan', 'NaN', 'Tag', '', ' ', 'None']:
-                    tag_name = str(tag_val).strip()
+                    tag_val_str = str(tag_val).strip()
+                    # 🔧 額外驗證：確保不是數據值
+                    try:
+                        # 如果能轉換為數字且看起來像測量值，可能是數據值
+                        float_val = float(tag_val_str)
+                        # 排除看起來像測量數據的值（溫度、時間等）
+                        if (0 <= float_val <= 200) or ('.' in tag_val_str and len(tag_val_str) > 5):
+                            # 可能是溫度數據或其他測量值，跳過  
+                            pass
+                        else:
+                            tag_name = tag_val_str
+                    except ValueError:
+                        # 不是數字，可能是真正的標籤名稱
+                        if len(tag_val_str) > 2:  # 有意義的描述
+                            tag_name = tag_val_str
             
-            # 智能命名策略
+            # 🎯 智能命名策略
             if tag_name and len(tag_name) > 2:  # Tag名稱優先且要有意義
                 final_name = tag_name
                 rename_log.append(f"欄位{i+1}: '{original_col}' → Tag'{tag_name}'")
@@ -801,12 +868,21 @@ class YokogawaParser(LogParser):
         
         # 統計重命名效果
         actual_changes = [(old, new) for old, new in new_column_names.items() if old != new]
-        st.write(f"✅ 智能重命名完成！實際重命名了 {len(actual_changes)} 個欄位")
+        protected_fields = [(old, new) for old, new in new_column_names.items() if old in protected_columns]
+        
+        st.write(f"✅ 智能重命名完成！")
+        st.write(f"📊 實際重命名: {len(actual_changes)} 個欄位")
+        st.write(f"🛡️ 保護關鍵欄位: {len(protected_fields)} 個")
         
         if len(actual_changes) > 0:
-            st.write("📊 重命名樣本:")
+            st.write("📋 重命名樣本:")
             for old, new in actual_changes[:5]:
                 st.write(f"  '{old}' → '{new}'")
+        
+        if len(protected_fields) > 0:
+            st.write("🛡️ 受保護欄位:")
+            for old, new in protected_fields[:3]:
+                st.write(f"  '{old}' (保持不變)")
         
         return df
     
@@ -1562,8 +1638,8 @@ class YokogawaRenderer:
         """渲染完整UI"""
         st.markdown("""
         <div class="success-box">
-            <h4>📊 YOKOGAWA Log 成功解析！(v10.3 動態搜索)</h4>
-            <p>已識別為溫度記錄儀數據，支援智能欄位重命名和部分檔案解析</p>
+            <h4>📊 YOKOGAWA Log 成功解析！(v10.3.1 動態搜索修正)</h4>
+            <p>已識別為溫度記錄儀數據，支援智能欄位重命名和部分檔案解析，關鍵欄位受保護</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1664,17 +1740,17 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🆕 v10.3 Dynamic Keyword Search 更新內容：
+        ### 🆕 v10.3.1 Dynamic Keyword Search - Fixed 更新內容：
         - 🔍 **動態關鍵字搜索** - YOKOGAWA解析不再依賴固定行號
-        - 📊 **智能Header搜索** - 自動找到包含時間關鍵詞的行
-        - 🏷️ **智能CH/Tag搜索** - 動態識別通道和標籤信息行
+        - 🛡️ **關鍵欄位保護** - Date、Time等重要欄位不會被誤改名
+        - 🎯 **智能Tag行識別** - 避免將數據行誤認為標籤行
+        - 📊 **增強數據驗證** - 排除數值型數據避免誤用作標籤
+        - 🔧 **容錯時間處理** - 即使重命名後仍可正確找到時間欄位
         - 📁 **部分檔案支援** - 支援擷取的數據段落，不需完整檔案
-        - 🎯 **容錯機制** - 找不到完整結構時仍可基本解析
-        - 🌐 **多語言支援** - 支援中英文時間關鍵詞搜索
         
         ### 🔄 解析策略對比：
         - **v10.2**: 固定行號 [29, 28, 30, 27] → 需要完整檔案
-        - **v10.3**: 關鍵字搜索 + 內容識別 → 支援部分檔案
+        - **v10.3.1**: 關鍵字搜索 + 智能保護 → 支援部分檔案且避免誤改名
         
         ### 🏗️ 技術特點：
         - **三階段搜索**: 關鍵字 → 結構 → 預設值
@@ -1687,7 +1763,7 @@ def display_version_info():
         """)
 
 def main():
-    """主程式 - v10.3 Dynamic Keyword Search"""
+    """主程式 - v10.3.1 Dynamic Keyword Search - Fixed"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1764,7 +1840,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3 支援 YOKOGAWA 完整/部分檔案、PTAT CSV、GPUMon CSV"
+        help="v10.3.1 支援 YOKOGAWA 完整/部分檔案、PTAT CSV、GPUMon CSV"
     )
     
     # 顯示訪問計數器
@@ -1781,7 +1857,7 @@ def main():
         st.sidebar.markdown("---")
         
         # 解析檔案
-        st.markdown("### 🔍 v10.3 動態解析調試資訊")
+        st.markdown("### 🔍 v10.3.1 動態解析調試資訊")
         
         log_data_list = []
         for uploaded_file in uploaded_files:
@@ -1914,9 +1990,11 @@ def main():
         💡 仍可進行數據分析
         ```
         
-        ### 🔧 v10.3 技術特點
+        ### 🔧 v10.3.1 技術特點
         
         - **智能搜索算法** - 不再依賴固定行號，適應各種檔案結構
+        - **關鍵欄位保護** - Date、Time等欄位永不被重命名
+        - **數據值識別** - 自動排除數字型數據，避免誤用作標籤
         - **動態適應機制** - 自動調整搜索策略，提高成功率
         - **詳細解析日誌** - 完整追蹤解析過程，便於問題診斷
         - **漸進式降級** - 找不到完整結構時提供基本功能
