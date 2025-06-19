@@ -1,5 +1,5 @@
-# thermal_analysis_platform_v10.3.2.py
-# 溫度數據視覺化平台 - v10.3.2 動態關鍵字搜索用戶邏輯版
+# thermal_analysis_platform_v10.3.3.py
+# 溫度數據視覺化平台 - v10.3.3 動態關鍵字搜索增強調試版
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3.2 Dynamic Keyword Search - User Logic"
+VERSION = "v10.3.3 Dynamic Keyword Search - Enhanced Debug"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -532,7 +532,7 @@ class YokogawaParser(LogParser):
         return True
     
     def parse(self, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
-        st.write(f"🚀 YOKOGAWA解析器啟動 (v10.3.2用戶邏輯版) - 檔案: {filename}")
+        st.write(f"🚀 YOKOGAWA解析器啟動 (v10.3.3增強調試版) - 檔案: {filename}")
         
         try:
             is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
@@ -589,7 +589,7 @@ class YokogawaParser(LogParser):
             # 🆕 動態重命名邏輯 - 搜索 CH 和 Tag 行
             if is_excel:
                 st.write("=" * 50)
-                st.write("🏷️ 開始YOKOGAWA欄位重命名邏輯 (v10.3.2用戶邏輯版)")
+                st.write("🏷️ 開始YOKOGAWA欄位重命名邏輯 (v10.3.3增強調試版)")
                 st.write("=" * 50)
                 
                 try:
@@ -682,103 +682,157 @@ class YokogawaParser(LogParser):
         return possible_headers
     
     def _find_ch_tag_rows(self, file_content: io.BytesIO, header_row: int) -> Tuple[Optional[int], Optional[int]]:
-        """🆕 動態尋找CH行和Tag行 - 用戶需求版"""
+        """🆕 動態尋找CH行和Tag行 - 增強調試版"""
         ch_row_idx = None
         tag_row_idx = None
         
         st.write(f"🔍 在header行({header_row+1})附近搜索CH和Tag行...")
         
-        # 只在header行前面搜索，避免將數據行誤認為Tag行
-        search_range = range(max(0, header_row - 5), header_row)
+        # 擴大搜索範圍，先全面分析文件結構
+        search_range = range(max(0, header_row - 8), header_row + 1)
         
-        # 第一步：尋找CH行
+        st.write("📋 **詳細文件結構分析**:")
+        
+        # 第一步：分析所有候選行的內容
+        row_analysis = []
         for idx in search_range:
             try:
                 file_content.seek(0)
                 test_row = pd.read_excel(file_content, header=None, skiprows=idx, nrows=1).iloc[0]
                 
-                # 檢查是否為CH行 (包含多個CH開頭的內容)
-                ch_count = len([val for val in test_row if pd.notna(val) and str(val).strip().upper().startswith('CH')])
-                if ch_count >= 3:  # 至少3個CH欄位
-                    ch_row_idx = idx
-                    st.write(f"  🎯 找到CH行在第{idx+1}行 (含{ch_count}個CH欄位)")
-                    break  # 找到CH行就停止
+                # 分析這一行的內容
+                ch_count = 0
+                meaningful_content = []
+                numeric_count = 0
+                empty_count = 0
+                
+                for val in test_row:
+                    if pd.isna(val) or str(val).strip() == '':
+                        empty_count += 1
+                    else:
+                        val_str = str(val).strip()
+                        if val_str.upper().startswith('CH'):
+                            ch_count += 1
+                        else:
+                            try:
+                                float(val_str)
+                                numeric_count += 1
+                            except ValueError:
+                                if len(val_str) > 1:
+                                    meaningful_content.append(val_str)
+                
+                analysis = {
+                    'row_idx': idx,
+                    'ch_count': ch_count,
+                    'meaningful_count': len(meaningful_content),
+                    'numeric_count': numeric_count,
+                    'empty_count': empty_count,
+                    'sample_content': meaningful_content[:5],
+                    'total_cells': len(test_row)
+                }
+                row_analysis.append(analysis)
+                
+                # 顯示每行的分析結果
+                st.write(f"  第{idx+1}行: CH={ch_count}, 文字={len(meaningful_content)}, 數字={numeric_count}, 空值={empty_count}")
+                if meaningful_content:
+                    st.write(f"    📝 文字內容樣本: {meaningful_content[:3]}")
                     
-            except Exception:
+            except Exception as e:
+                st.write(f"  第{idx+1}行: 分析失敗 - {e}")
                 continue
         
-        # 第二步：尋找Tag行（更嚴格的條件）
+        # 第二步：根據分析結果找CH行
+        st.write("\n🔍 **CH行識別**:")
+        for analysis in row_analysis:
+            if analysis['ch_count'] >= 3:
+                ch_row_idx = analysis['row_idx']
+                st.write(f"✅ 找到CH行在第{ch_row_idx+1}行 (含{analysis['ch_count']}個CH欄位)")
+                break
+        
+        # 第三步：根據分析結果找Tag行（放寬條件）
+        st.write("\n🔍 **Tag行識別**:")
         if ch_row_idx is not None:
-            # 優先檢查CH行的前一行是否為Tag行
+            # 擴大Tag行搜索範圍，包括CH行前後
             tag_candidates = []
-            
-            # 檢查CH行前面的行
-            for offset in [1, 2]:  # 檢查CH行前1行和前2行
-                candidate_idx = ch_row_idx - offset
-                if candidate_idx >= 0:
+            for offset in range(-3, 2):  # CH行前3行到後1行
+                candidate_idx = ch_row_idx + offset
+                if 0 <= candidate_idx < header_row and candidate_idx != ch_row_idx:
                     tag_candidates.append(candidate_idx)
             
+            st.write(f"🎯 Tag行候選位置: {[idx+1 for idx in tag_candidates]}")
+            
             for candidate_idx in tag_candidates:
-                try:
-                    file_content.seek(0)
-                    test_row = pd.read_excel(file_content, header=None, skiprows=candidate_idx, nrows=1).iloc[0]
-                    
-                    # 分析這一行的內容
-                    meaningful_tags = []
-                    numeric_values = 0
-                    empty_values = 0
-                    
-                    for i, val in enumerate(test_row):
-                        if pd.isna(val) or str(val).strip() == '':
-                            empty_values += 1
-                        else:
-                            val_str = str(val).strip()
-                            # 排除明顯的標題、CH編號等
-                            if val_str.upper() in ['TAG', 'CHANNEL', 'CH', 'POINT']:
-                                continue
-                            if val_str.upper().startswith('CH'):
-                                continue
-                            
-                            # 檢查是否為數字（可能是數據行）
-                            try:
-                                float_val = float(val_str)
-                                # 如果是看起來像溫度、時間等數據的數字，可能是數據行
-                                if (0 <= float_val <= 200) or '.' in val_str:
-                                    numeric_values += 1
-                                else:
-                                    meaningful_tags.append(val_str)
-                            except ValueError:
-                                # 不是數字，可能是有意義的標籤
-                                if len(val_str) > 1:  # 至少要有2個字符
-                                    meaningful_tags.append(val_str)
-                    
-                    # 判斷是否為合適的Tag行
-                    total_cells = len(test_row)
-                    tag_ratio = len(meaningful_tags) / total_cells if total_cells > 0 else 0
-                    numeric_ratio = numeric_values / total_cells if total_cells > 0 else 0
-                    
-                    st.write(f"    📋 第{candidate_idx+1}行分析: 有意義標籤={len(meaningful_tags)}, 數字={numeric_values}, 空值={empty_values}")
-                    
-                    # 如果有一定比例的有意義標籤，且數字比例不太高，認為是Tag行
-                    if len(meaningful_tags) >= 2 and numeric_ratio < 0.6:
-                        tag_row_idx = candidate_idx
-                        st.write(f"  🎯 找到Tag行在第{candidate_idx+1}行 (有意義標籤: {meaningful_tags[:3]}...)")
+                # 找到對應的分析結果
+                candidate_analysis = None
+                for analysis in row_analysis:
+                    if analysis['row_idx'] == candidate_idx:
+                        candidate_analysis = analysis
                         break
-                    elif numeric_ratio > 0.7:
-                        st.write(f"    ⚠️ 第{candidate_idx+1}行數字比例過高({numeric_ratio:.1%})，可能是數據行")
-                    
-                except Exception as e:
-                    st.write(f"    ❌ 第{candidate_idx+1}行分析失敗: {e}")
+                
+                if candidate_analysis is None:
                     continue
+                
+                st.write(f"  檢查第{candidate_idx+1}行:")
+                st.write(f"    文字內容: {candidate_analysis['meaningful_count']}")
+                st.write(f"    數字內容: {candidate_analysis['numeric_count']}")
+                st.write(f"    樣本: {candidate_analysis['sample_content']}")
+                
+                # 🔧 放寬Tag行識別條件
+                is_good_tag_row = False
+                
+                # 條件1: 有足夠的文字內容（降低門檻）
+                if candidate_analysis['meaningful_count'] >= 1:
+                    is_good_tag_row = True
+                    st.write(f"    ✅ 條件1滿足: 有{candidate_analysis['meaningful_count']}個文字內容")
+                
+                # 條件2: 即使沒有文字內容，但如果不是明顯的數據行也可以
+                elif candidate_analysis['numeric_count'] < candidate_analysis['total_cells'] * 0.8:
+                    is_good_tag_row = True
+                    st.write(f"    ✅ 條件2滿足: 數字比例不高({candidate_analysis['numeric_count']}/{candidate_analysis['total_cells']})")
+                
+                if is_good_tag_row:
+                    tag_row_idx = candidate_idx
+                    st.write(f"    🎯 選定為Tag行")
+                    break
+                else:
+                    st.write(f"    ❌ 不適合作為Tag行")
+        
+        # 第四步：如果還是沒找到Tag行，進一步放寬條件
+        if ch_row_idx is not None and tag_row_idx is None:
+            st.write("\n🔄 **放寬條件再次搜索Tag行**:")
+            
+            # 最寬鬆的條件：只要不是純數字行就接受
+            for analysis in row_analysis:
+                if (analysis['row_idx'] != ch_row_idx and 
+                    analysis['row_idx'] < header_row and
+                    analysis['numeric_count'] < analysis['total_cells'] * 0.9):  # 90%以上是數字才排除
+                    
+                    tag_row_idx = analysis['row_idx']
+                    st.write(f"🎯 放寬條件找到Tag行在第{tag_row_idx+1}行")
+                    break
         
         # 最終結果
         if ch_row_idx is not None and tag_row_idx is not None:
-            st.write(f"✅ 動態搜索成功！CH行: {ch_row_idx+1}, Tag行: {tag_row_idx+1}")
+            st.write(f"\n✅ **最終結果**: CH行={ch_row_idx+1}, Tag行={tag_row_idx+1}")
+            
+            # 顯示實際內容預覽
+            try:
+                file_content.seek(0)
+                ch_row_content = pd.read_excel(file_content, header=None, skiprows=ch_row_idx, nrows=1).iloc[0]
+                file_content.seek(0)
+                tag_row_content = pd.read_excel(file_content, header=None, skiprows=tag_row_idx, nrows=1).iloc[0]
+                
+                st.write("📋 **內容預覽**:")
+                st.write(f"  CH行樣本: {[str(ch_row_content.iloc[i]) for i in range(min(5, len(ch_row_content)))]}")
+                st.write(f"  Tag行樣本: {[str(tag_row_content.iloc[i]) for i in range(min(5, len(tag_row_content)))]}")
+                
+            except Exception as e:
+                st.write(f"內容預覽失敗: {e}")
+                
         elif ch_row_idx is not None:
-            st.write(f"⚠️ 只找到CH行: {ch_row_idx+1}，未找到合適的Tag行")
-            st.write("💡 將只使用CH行進行命名")
+            st.write(f"\n⚠️ **只找到CH行**: 第{ch_row_idx+1}行，將只使用CH行命名")
         else:
-            st.write("❌ 未找到CH/Tag行，可能是部分擷取的檔案")
+            st.write(f"\n❌ **未找到CH/Tag行**，可能是部分擷取的檔案")
         
         return ch_row_idx, tag_row_idx
     
@@ -986,7 +1040,7 @@ class YokogawaParser(LogParser):
             file_size_kb=file_size_kb
         )
         
-        st.write(f"🎉 YOKOGAWA v10.3.2 用戶邏輯解析完成！")
+        st.write(f"🎉 YOKOGAWA v10.3.3 增強調試解析完成！")
         st.write(f"📊 最終數據形狀: {result_df.shape}")
         st.write(f"🏷️ 最終欄位樣本: {list(result_df.columns)[:8]}...")
         
@@ -1668,8 +1722,8 @@ class YokogawaRenderer:
         """渲染完整UI"""
         st.markdown("""
         <div class="success-box">
-            <h4>📊 YOKOGAWA Log 成功解析！(v10.3.2 用戶邏輯版)</h4>
-            <p>已識別為溫度記錄儀數據，按用戶需求：Tag行優先，CH行備選，關鍵欄位受保護</p>
+            <h4>📊 YOKOGAWA Log 成功解析！(v10.3.3 增強調試版)</h4>
+            <p>已識別為溫度記錄儀數據，詳細分析文件結構，Tag行優先+CH行備選，關鍵欄位受保護</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1770,18 +1824,18 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🆕 v10.3.2 Dynamic Keyword Search - User Logic 更新內容：
-        - 🎯 **正確的命名邏輯** - Tag行優先，CH行備選，完全符合用戶需求
-        - 🏷️ **智能Tag識別** - 準確識別用戶自定義代號vs系統默認值
-        - 📋 **CH行備選機制** - Tag行無內容時自動使用CH行（CH001, CH002...）
-        - 🛡️ **關鍵欄位保護** - Date、Time等重要欄位永不被重命名
-        - 🔍 **增強Tag行搜索** - 更嚴格的條件避免數據行誤識別
-        - 📊 **詳細統計報告** - 清楚顯示使用Tag vs CH的統計
-        - 🔧 **容錯時間處理** - 即使重命名後仍可正確找到時間欄位
+        ### 🆕 v10.3.3 Dynamic Keyword Search - Enhanced Debug 更新內容：
+        - 🔍 **詳細文件結構分析** - 顯示每一行的具體內容和分析結果
+        - 📊 **擴大搜索範圍** - CH行前8行全面搜索，不放過任何可能
+        - 🎯 **放寬Tag行條件** - 只要有1個文字內容或數字比例不太高即可
+        - 🔄 **多階段搜索** - 第一輪失敗後自動放寬條件再搜索  
+        - 📋 **內容預覽功能** - 找到CH/Tag行後顯示實際內容樣本
+        - 🛠️ **增強調試信息** - 完整追蹤搜索過程，便於問題診斷
+        - 🎯 **正確的命名邏輯** - 保持Tag行優先，CH行備選的邏輯
         
         ### 🔄 解析策略對比：
         - **v10.2**: 固定行號 [29, 28, 30, 27] → 需要完整檔案
-        - **v10.3.2**: Tag優先+CH備選+智能保護 → 完全符合用戶命名需求
+        - **v10.3.3**: 增強調試+放寬條件 → 詳細分析每行內容，不遺漏Tag行
         
         ### 🏗️ 技術特點：
         - **三階段搜索**: 關鍵字 → 結構 → 預設值
@@ -1794,7 +1848,7 @@ def display_version_info():
         """)
 
 def main():
-    """主程式 - v10.3.2 Dynamic Keyword Search - User Logic"""
+    """主程式 - v10.3.3 Dynamic Keyword Search - Enhanced Debug"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1871,7 +1925,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.2 支援 YOKOGAWA 完整/部分檔案、PTAT CSV、GPUMon CSV"
+        help="v10.3.3 支援 YOKOGAWA 完整/部分檔案、PTAT CSV、GPUMon CSV"
     )
     
     # 顯示訪問計數器
@@ -1888,7 +1942,7 @@ def main():
         st.sidebar.markdown("---")
         
         # 解析檔案
-        st.markdown("### 🔍 v10.3.2 動態解析調試資訊")
+        st.markdown("### 🔍 v10.3.3 增強調試解析資訊")
         
         log_data_list = []
         for uploaded_file in uploaded_files:
@@ -2021,16 +2075,16 @@ def main():
         💡 仍可進行數據分析
         ```
         
-        ### 🔧 v10.3.2 技術特點
+        ### 🔧 v10.3.3 技術特點
         
+        - **全方位文件分析** - 逐行掃描並顯示每行的詳細內容統計
+        - **智能搜索算法** - 擴大搜索範圍，多階段放寬條件
         - **用戶需求導向** - 完全按照「Tag優先，CH備選」的命名邏輯設計
-        - **智能內容識別** - 自動區分用戶自定義代號、CH編號、數據值
+        - **詳細調試信息** - 完整追蹤每個搜索和判斷步驟
+        - **內容預覽功能** - 找到行後立即顯示實際內容確認
         - **關鍵欄位保護** - Date、Time等欄位永不被重命名
-        - **智能搜索算法** - 不依賴固定行號，適應各種檔案結構
-        - **嚴格Tag行驗證** - 多重條件確保不將數據行誤認為Tag行
-        - **詳細統計報告** - 清楚追蹤Tag vs CH的使用情況
-        - **動態適應機制** - 自動調整搜索策略，提高成功率
-        - **完整解析日誌** - 詳細記錄每個欄位的命名決策過程
+        - **容錯降級機制** - 多重條件確保找到合適的Tag行
+        - **統計報告完整** - 清楚追蹤Tag vs CH的使用情況
         """)
 
 if __name__ == "__main__":
