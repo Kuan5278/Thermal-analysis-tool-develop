@@ -1,5 +1,5 @@
-# thermal_analysis_platform_v10.3.5.py
-# 溫度數據視覺化平台 - v10.3.5 動態關鍵字搜索簡潔界面版
+# thermal_analysis_platform_v10.3.6.py
+# 溫度數據視覺化平台 - v10.3.6 超簡潔界面版 (所有解析資訊隱藏)
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3.5 Dynamic Keyword Search - Clean UI"
+VERSION = "v10.3.6 Ultra Clean Interface"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -241,11 +241,74 @@ class LogData:
         return self.df[(self.df.index >= x_min_td) & (self.df.index <= x_max_td)]
 
 # =============================================================================
-# 2. 解析器層 (Parser Layer)
+# 2. 解析器層 (Parser Layer) - 超簡潔版本
 # =============================================================================
+
+class ParseLogger:
+    """解析日誌管理器 - 統一管理所有解析輸出"""
+    
+    def __init__(self):
+        self.logs = []
+        self.debug_logs = []
+        self.success_logs = []
+        self.error_logs = []
+    
+    def info(self, message: str):
+        """記錄一般信息"""
+        self.logs.append(f"ℹ️ {message}")
+    
+    def debug(self, message: str):
+        """記錄調試信息"""
+        self.debug_logs.append(f"🔍 {message}")
+    
+    def success(self, message: str):
+        """記錄成功信息"""
+        self.success_logs.append(f"✅ {message}")
+    
+    def error(self, message: str):
+        """記錄錯誤信息"""
+        self.error_logs.append(f"❌ {message}")
+    
+    def warning(self, message: str):
+        """記錄警告信息"""
+        self.logs.append(f"⚠️ {message}")
+    
+    def show_summary(self, filename: str, log_type: str):
+        """顯示簡潔的解析摘要"""
+        if self.success_logs:
+            st.success(f"✅ {log_type} 解析成功！")
+        elif self.error_logs:
+            st.error(f"❌ {filename} 解析失敗")
+            return
+    
+    def show_detailed_logs(self, filename: str):
+        """在摺疊區域內顯示詳細日誌"""
+        with st.expander(f"🔍 詳細解析日誌 - {filename}", expanded=False):
+            if self.debug_logs:
+                st.markdown("**🔍 調試信息：**")
+                for log in self.debug_logs:
+                    st.code(log, language=None)
+            
+            if self.logs:
+                st.markdown("**📋 解析過程：**")
+                for log in self.logs:
+                    st.write(log)
+            
+            if self.success_logs:
+                st.markdown("**✅ 成功信息：**")
+                for log in self.success_logs:
+                    st.write(log)
+            
+            if self.error_logs:
+                st.markdown("**❌ 錯誤信息：**")
+                for log in self.error_logs:
+                    st.write(log)
 
 class LogParser(ABC):
     """解析器抽象基類"""
+    
+    def __init__(self):
+        self.logger = ParseLogger()
     
     @abstractmethod
     def can_parse(self, file_content: io.BytesIO, filename: str) -> bool:
@@ -264,7 +327,7 @@ class LogParser(ABC):
         pass
 
 class GPUMonParser(LogParser):
-    """GPUMon解析器"""
+    """GPUMon解析器 - 超簡潔版"""
     
     @property
     def log_type(self) -> str:
@@ -298,27 +361,30 @@ class GPUMonParser(LogParser):
             return False
     
     def parse(self, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
-        """解析GPUMon檔案"""
+        """解析GPUMon檔案 - 靜默版本"""
         try:
             file_content.seek(0)
             content = file_content.read().decode('utf-8', errors='ignore')
             lines = content.split('\n')
             
-            st.write(f"🔍 GPUMon Debug: 檔案總行數 {len(lines)}")
+            self.logger.debug(f"檔案總行數: {len(lines)}")
             
             # 尋找標題行
             header_row_index = self._find_header_row(lines)
             if header_row_index is None:
+                self.logger.error("找不到有效的標題行")
                 return None
             
             # 解析數據
             df = self._parse_data_rows(lines, header_row_index)
             if df is None:
+                self.logger.error("數據行解析失敗")
                 return None
             
             # 處理時間
             df = self._process_time_data(df)
             if df is None:
+                self.logger.error("時間數據處理失敗")
                 return None
             
             # 數值轉換
@@ -342,36 +408,36 @@ class GPUMonParser(LogParser):
                 file_size_kb=file_size_kb
             )
             
-            st.write(f"🎉 GPUMon解析成功! 最終數據: {result_df.shape}")
+            self.logger.success(f"GPUMon解析成功！數據形狀: {result_df.shape}")
             return LogData(result_df, metadata)
             
         except Exception as e:
-            st.error(f"❌ GPUMon解析錯誤: {e}")
+            self.logger.error(f"GPUMon解析異常: {e}")
             return None
     
     def _find_header_row(self, lines: List[str]) -> Optional[int]:
-        """尋找標題行"""
+        """靜默尋找標題行"""
         for i, line in enumerate(lines):
             line_lower = line.lower()
             if ('iteration' in line_lower and 'date' in line_lower and 'timestamp' in line_lower):
-                st.write(f"✅ 找到標題行在第 {i+1} 行")
+                self.logger.debug(f"找到標題行在第 {i+1} 行")
                 return i
         
         # 備用搜尋
         for i, line in enumerate(lines):
             if line.count(',') > 10 and ('iteration' in line.lower() or 'gpu' in line.lower()):
-                st.write(f"📍 備用方式找到可能的標題行在第 {i+1} 行")
+                self.logger.debug(f"備用方式找到標題行在第 {i+1} 行")
                 return i
         
         return None
     
     def _parse_data_rows(self, lines: List[str], header_row_index: int) -> Optional[pd.DataFrame]:
-        """解析數據行"""
+        """靜默解析數據行"""
         header_line = lines[header_row_index]
-        st.write(f"📋 標題行內容: {header_line[:100]}...")
+        self.logger.debug(f"解析標題行，長度: {len(header_line)}")
         
         headers = [h.strip() for h in header_line.split(',')]
-        st.write(f"📊 解析到 {len(headers)} 個欄位")
+        self.logger.debug(f"解析到 {len(headers)} 個欄位")
         
         data_rows = []
         valid_data_count = 0
@@ -386,12 +452,10 @@ class GPUMonParser(LogParser):
                             any(cell and cell != 'N/A' for cell in row_data[:5])):
                             data_rows.append(row_data)
                             valid_data_count += 1
-                            if valid_data_count <= 3:
-                                st.write(f"✅ 有效數據行 {valid_data_count}: {row_data[:5]}...")
                 except Exception:
                     continue
         
-        st.write(f"📈 找到 {len(data_rows)} 行有效數據")
+        self.logger.debug(f"找到 {len(data_rows)} 行有效數據")
         
         if not data_rows:
             return None
@@ -407,45 +471,42 @@ class GPUMonParser(LogParser):
                 row.append('')
         
         df = pd.DataFrame(data_rows, columns=headers[:max_cols])
-        st.write(f"🎯 DataFrame創建成功: {df.shape}")
+        self.logger.debug(f"DataFrame創建成功: {df.shape}")
         
         return df
     
     def _process_time_data(self, df: pd.DataFrame) -> Optional[pd.DataFrame]:
-        """處理時間數據"""
+        """靜默處理時間數據"""
         try:
             if 'Date' in df.columns and 'Timestamp' in df.columns:
-                st.write("🕐 處理時間格式: Date + Timestamp")
+                self.logger.debug("處理時間格式: Date + Timestamp")
                 
                 df['Timestamp_fixed'] = df['Timestamp'].str.replace(r':(\d{3})$', r'.\1', regex=True)
-                st.write(f"🔧 時間格式修正: {df['Timestamp'].iloc[0]} -> {df['Timestamp_fixed'].iloc[0]}")
-                
                 df['DateTime'] = pd.to_datetime(df['Date'] + ' ' + df['Timestamp_fixed'], errors='coerce')
-                st.write(f"📅 合併後時間: {df['DateTime'].iloc[0]}")
                 
             else:
                 df['DateTime'] = pd.to_datetime('2025-01-01') + pd.to_timedelta(range(len(df)), unit='s')
             
             valid_datetime_count = df['DateTime'].notna().sum()
-            st.write(f"📊 成功解析的時間點: {valid_datetime_count}/{len(df)}")
+            self.logger.debug(f"成功解析的時間點: {valid_datetime_count}/{len(df)}")
             
             if valid_datetime_count > 0:
                 df['time_index'] = df['DateTime'] - df['DateTime'].iloc[0]
                 valid_mask = df['time_index'].notna()
                 df = df[valid_mask].copy()
-                st.write(f"⏰ 時間解析成功，最終有效數據: {len(df)} 行")
+                self.logger.debug(f"時間解析成功，最終數據: {len(df)} 行")
             else:
                 df['time_index'] = pd.to_timedelta(range(len(df)), unit='s')
             
             return df
             
         except Exception as e:
-            st.write(f"⚠️ 時間解析異常: {e}")
+            self.logger.warning(f"時間解析異常，使用默認時間: {e}")
             df['time_index'] = pd.to_timedelta(range(len(df)), unit='s')
             return df
     
     def _convert_numeric_columns(self, df: pd.DataFrame) -> pd.DataFrame:
-        """轉換數值型欄位"""
+        """靜默轉換數值型欄位"""
         numeric_count = 0
         for col in df.columns:
             if col not in ['Date', 'Timestamp', 'DateTime', 'time_index', 'Iteration']:
@@ -457,11 +518,11 @@ class GPUMonParser(LogParser):
                 except:
                     pass
         
-        st.write(f"🔢 轉換了 {numeric_count} 個數值欄位")
+        self.logger.debug(f"轉換了 {numeric_count} 個數值欄位")
         return df
 
 class PTATParser(LogParser):
-    """PTAT解析器"""
+    """PTAT解析器 - 超簡潔版"""
     
     @property
     def log_type(self) -> str:
@@ -483,6 +544,7 @@ class PTATParser(LogParser):
             df.columns = df.columns.str.strip()
             
             if 'Time' not in df.columns:
+                self.logger.error("找不到時間欄位")
                 return None
             
             time_series = df['Time'].astype(str).str.strip()
@@ -493,6 +555,7 @@ class PTATParser(LogParser):
             df = df[valid_times_mask].copy()
             
             if df.empty:
+                self.logger.error("沒有有效的時間數據")
                 return None
             
             valid_datetimes = datetime_series[valid_times_mask]
@@ -515,13 +578,15 @@ class PTATParser(LogParser):
                 file_size_kb=file_size_kb
             )
             
+            self.logger.success(f"PTAT解析成功！數據形狀: {result_df.shape}")
             return LogData(result_df, metadata)
             
         except Exception as e:
+            self.logger.error(f"PTAT解析失敗: {e}")
             return None
 
 class YokogawaParser(LogParser):
-    """🆕 YOKOGAWA解析器 - 動態關鍵字搜索版本"""
+    """YOKOGAWA解析器 - v10.3.6 超簡潔版本"""
     
     @property
     def log_type(self) -> str:
@@ -532,22 +597,22 @@ class YokogawaParser(LogParser):
         return True
     
     def parse(self, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
-        st.write(f"🚀 YOKOGAWA解析器啟動 (v10.3.5簡潔界面版) - 檔案: {filename}")
+        self.logger.info(f"啟動YOKOGAWA解析器 (v10.3.6超簡潔版) - {filename}")
         
         try:
             is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
             read_func = pd.read_excel if is_excel else pd.read_csv
             
-            st.write(f"🔍 檔案類型: {'Excel' if is_excel else 'CSV'}")
+            self.logger.debug(f"檔案類型: {'Excel' if is_excel else 'CSV'}")
             
-            # 🆕 動態搜索可能的 header 行
+            # 動態搜索可能的 header 行
             possible_headers = self._find_possible_headers(file_content, is_excel, read_func)
             
             df = None
             found_time_col = None
             successful_header = None
             
-            st.write(f"📋 動態搜索找到候選header行: {possible_headers}")
+            self.logger.debug(f"候選header行: {possible_headers}")
             
             for header_row in possible_headers:
                 try:
@@ -555,8 +620,7 @@ class YokogawaParser(LogParser):
                     df = read_func(file_content, header=header_row, thousands=',')
                     df.columns = df.columns.str.strip()
                     
-                    st.write(f"  🔍 嘗試header_row={header_row}, 得到形狀: {df.shape}")
-                    st.write(f"  📊 欄位樣本: {list(df.columns)[:8]}...")
+                    self.logger.debug(f"嘗試header_row={header_row}, 形狀: {df.shape}")
                     
                     time_candidates = ['Time', 'TIME', 'time', 'Date', 'DATE', 'date', 
                                      'DateTime', 'DATETIME', 'datetime', '時間', '日期時間',
@@ -566,297 +630,177 @@ class YokogawaParser(LogParser):
                         if candidate in df.columns:
                             found_time_col = candidate
                             successful_header = header_row
-                            st.write(f"  ✅ 找到時間欄位: {candidate}")
+                            self.logger.debug(f"找到時間欄位: {candidate}")
                             break
                     
                     if found_time_col:
                         break
                         
                 except Exception as e:
-                    st.write(f"  ❌ header_row={header_row} 失敗: {e}")
+                    self.logger.debug(f"header_row={header_row} 失敗: {e}")
                     continue
             
             if df is None or found_time_col is None:
-                error_msg = f"❌ 無法找到時間欄位。建議上傳完整的YOKOGAWA檔案以獲得最佳效果。"
-                st.error(error_msg)
-                st.info("💡 提示：動態搜索支援部分檔案，但完整檔案解析效果更佳")
+                self.logger.error("無法找到時間欄位")
                 return None
             
             time_column = found_time_col
-            st.write(f"✅ 成功解析，使用header_row={successful_header}, 時間欄位='{time_column}'")
-            st.write(f"📊 DataFrame最終形狀: {df.shape}")
+            self.logger.success(f"成功解析，header_row={successful_header}, 時間欄位='{time_column}'")
+            self.logger.debug(f"DataFrame形狀: {df.shape}")
             
-            # 🆕 動態重命名邏輯 - 搜索 CH 和 Tag 行
+            # 動態重命名邏輯 - 靜默執行
             if is_excel:
-                st.write("=" * 50)
-                st.write("🏷️ 開始YOKOGAWA欄位重命名邏輯 (v10.3.5簡潔界面版)")
-                st.write("=" * 50)
-                
                 try:
-                    # 🆕 動態尋找 CH 行和 Tag 行
                     ch_row_idx, tag_row_idx = self._find_ch_tag_rows(file_content, successful_header)
                     
                     if ch_row_idx is not None and tag_row_idx is not None:
-                        st.write(f"🎯 動態搜索成功！CH行在第{ch_row_idx+1}行，Tag行在第{tag_row_idx+1}行")
+                        self.logger.debug(f"找到CH行(第{ch_row_idx+1}行)和Tag行(第{tag_row_idx+1}行)")
                         
-                        # 讀取CH行
+                        # 讀取CH行和Tag行
                         file_content.seek(0)
                         ch_row = pd.read_excel(file_content, header=None, skiprows=ch_row_idx, nrows=1).iloc[0]
-                        st.write(f"✅ CH行讀取成功，長度: {len(ch_row)}")
-                        
-                        # 讀取Tag行
                         file_content.seek(0)
                         tag_row = pd.read_excel(file_content, header=None, skiprows=tag_row_idx, nrows=1).iloc[0]
-                        st.write(f"✅ Tag行讀取成功，長度: {len(tag_row)}")
                         
                         # 執行重命名
                         df = self._perform_renaming(df, ch_row, tag_row)
                     else:
-                        st.write("⚠️ 未找到CH/Tag行，使用原始欄位名稱")
-                        st.info("💡 這可能是部分擷取的檔案，仍可進行基本分析")
+                        self.logger.info("未找到CH/Tag行，使用原始欄位名稱")
                         
                 except Exception as e:
-                    st.write(f"❌ 動態重命名過程異常: {e}")
-                    st.write("⚠️ 將繼續使用原始欄位名稱")
+                    self.logger.warning(f"重命名過程異常: {e}")
             
-            # 繼續處理時間和其他邏輯...
+            # 處理時間和完成解析
             result = self._process_time_and_finalize(df, time_column, file_content, filename)
             
             return result
             
         except Exception as e:
-            st.write(f"❌ YOKOGAWA解析器整體異常: {e}")
-            import traceback
-            st.write("完整錯誤堆疊:")
-            st.code(traceback.format_exc())
+            self.logger.error(f"YOKOGAWA解析器異常: {e}")
             return None
     
     def _find_possible_headers(self, file_content: io.BytesIO, is_excel: bool, read_func) -> List[int]:
-        """🆕 動態搜索可能的header行 - 簡潔版"""
+        """靜默搜索可能的header行"""
         if not is_excel:
             return [0, 1, 2]  # CSV 通常在前幾行
         
-        # Excel 檔案：動態搜索包含時間相關欄位的行
         possible_headers = []
         
-        st.write("🔍 開始搜索包含時間關鍵詞的header行...")
+        self.logger.debug("開始搜索header行...")
         
-        # 在摺疊區域內顯示詳細搜索過程
-        with st.expander("📊 Header行搜索詳細過程", expanded=False):
-            st.write("**第一階段：關鍵字搜索**")
-            
-            # 第一階段：關鍵字搜索
-            time_keywords = ['time', 'date', 'timestamp', '時間', '日期']
-            
-            for pos in range(0, 50):  # 搜索前50行
+        # 第一階段：關鍵字搜索
+        time_keywords = ['time', 'date', 'timestamp', '時間', '日期']
+        
+        for pos in range(0, 50):  # 搜索前50行
+            try:
+                file_content.seek(0)
+                test_df = read_func(file_content, header=pos, nrows=1)
+                columns_str = ' '.join(str(col).lower() for col in test_df.columns if pd.notna(col))
+                
+                # 檢查是否包含時間相關關鍵詞
+                if any(keyword in columns_str for keyword in time_keywords):
+                    possible_headers.append(pos)
+                    found_keywords = [kw for kw in time_keywords if kw in columns_str]
+                    self.logger.debug(f"第{pos+1}行包含時間關鍵詞: {found_keywords}")
+                    
+            except Exception:
+                continue
+        
+        # 第二階段：結構搜索
+        if not possible_headers:
+            self.logger.debug("關鍵字搜索失敗，使用結構搜索")
+            for pos in range(0, 50):
                 try:
                     file_content.seek(0)
                     test_df = read_func(file_content, header=pos, nrows=1)
-                    columns_str = ' '.join(str(col).lower() for col in test_df.columns if pd.notna(col))
-                    
-                    # 檢查是否包含時間相關關鍵詞
-                    if any(keyword in columns_str for keyword in time_keywords):
+                    if test_df.shape[1] >= 5:  # 至少要有5個欄位
                         possible_headers.append(pos)
-                        found_keywords = [kw for kw in time_keywords if kw in columns_str]
-                        st.write(f"  🎯 第{pos+1}行包含時間關鍵詞: {found_keywords}")
-                        
+                        if len(possible_headers) >= 10:  # 最多找10個候選
+                            break
                 except Exception:
                     continue
-            
-            # 第二階段：如果關鍵字搜索失敗，使用結構搜索
-            if not possible_headers:
-                st.write("**第二階段：結構搜索**")
-                for pos in range(0, 50):
-                    try:
-                        file_content.seek(0)
-                        test_df = read_func(file_content, header=pos, nrows=1)
-                        if test_df.shape[1] >= 5:  # 至少要有5個欄位
-                            possible_headers.append(pos)
-                            st.write(f"  📊 第{pos+1}行有{test_df.shape[1]}個欄位")
-                            if len(possible_headers) >= 10:  # 最多找10個候選
-                                break
-                    except Exception:
-                        continue
-            
-            # 第三階段：如果還是找不到，使用預設值
-            if not possible_headers:
-                possible_headers = [29, 28, 30, 27, 26, 31, 32] if is_excel else [0, 1, 2]
-                st.write("**第三階段：使用預設搜索範圍**")
-                st.write(f"  使用預設位置: {possible_headers}")
         
-        # 顯示簡潔的搜索結果
-        if possible_headers:
-            st.write(f"✅ 找到 {len(possible_headers)} 個候選header行: {possible_headers[:5]}{'...' if len(possible_headers) > 5 else ''}")
-        else:
-            st.warning("⚠️ 未找到明確的header行，將使用預設範圍")
+        # 第三階段：預設值
+        if not possible_headers:
+            possible_headers = [29, 28, 30, 27, 26, 31, 32] if is_excel else [0, 1, 2]
+            self.logger.debug("使用預設搜索範圍")
         
+        self.logger.debug(f"找到 {len(possible_headers)} 個候選header行")
         return possible_headers
     
     def _find_ch_tag_rows(self, file_content: io.BytesIO, header_row: int) -> Tuple[Optional[int], Optional[int]]:
-        """🆕 動態尋找CH行和Tag行 - 簡潔界面版"""
+        """靜默尋找CH行和Tag行"""
         ch_row_idx = None
         tag_row_idx = None
         
-        st.write(f"🔍 在header行({header_row+1})附近搜索CH和Tag行...")
+        self.logger.debug(f"在header行({header_row+1})附近搜索CH和Tag行")
         
-        # 擴大搜索範圍
+        # 搜索範圍
         search_range = range(max(0, header_row - 8), header_row + 1)
         
-        # 創建詳細日誌的摺疊區域
-        with st.expander("📋 詳細文件結構分析", expanded=False):
-            st.write("**逐行內容分析：**")
-            
-            # 分析所有候選行的內容
-            row_analysis = []
-            for idx in search_range:
-                try:
-                    file_content.seek(0)
-                    test_row = pd.read_excel(file_content, header=None, skiprows=idx, nrows=1).iloc[0]
-                    
-                    # 分析這一行的內容
-                    ch_count = 0
-                    meaningful_tags = []
-                    numeric_count = 0
-                    empty_count = 0
-                    all_values = []
-                    
-                    for val in test_row:
-                        if pd.isna(val) or str(val).strip() == '':
-                            empty_count += 1
-                        else:
-                            val_str = str(val).strip()
-                            all_values.append(val_str)
-                            
-                            if val_str.upper().startswith('CH'):
-                                ch_count += 1
-                            elif self._is_meaningful_tag(val):
-                                meaningful_tags.append(val_str)
-                            else:
-                                try:
-                                    float(val_str)
-                                    numeric_count += 1
-                                except ValueError:
-                                    pass
-                    
-                    analysis = {
-                        'row_idx': idx,
-                        'ch_count': ch_count,
-                        'meaningful_tags': meaningful_tags,
-                        'meaningful_count': len(meaningful_tags),
-                        'numeric_count': numeric_count,
-                        'empty_count': empty_count,
-                        'all_values': all_values[:10],
-                        'total_cells': len(test_row)
-                    }
-                    row_analysis.append(analysis)
-                    
-                    # 在摺疊區域內顯示詳細分析
-                    st.write(f"  第{idx+1}行: CH={ch_count}, 用戶標籤={len(meaningful_tags)}, 數字={numeric_count}, 空值={empty_count}")
-                    if meaningful_tags:
-                        st.write(f"    🏷️ 用戶標籤: {meaningful_tags[:5]}")
-                    if all_values:
-                        st.write(f"    📝 內容樣本: {all_values[:8]}")
+        # 分析所有候選行的內容
+        row_analysis = []
+        for idx in search_range:
+            try:
+                file_content.seek(0)
+                test_row = pd.read_excel(file_content, header=None, skiprows=idx, nrows=1).iloc[0]
+                
+                # 分析這一行的內容
+                ch_count = 0
+                meaningful_tags = []
+                
+                for val in test_row:
+                    if pd.isna(val) or str(val).strip() == '':
+                        continue
+                    else:
+                        val_str = str(val).strip()
                         
-                except Exception as e:
-                    st.write(f"  第{idx+1}行: 分析失敗 - {e}")
-                    continue
+                        if val_str.upper().startswith('CH'):
+                            ch_count += 1
+                        elif self._is_meaningful_tag(val):
+                            meaningful_tags.append(val_str)
+                
+                analysis = {
+                    'row_idx': idx,
+                    'ch_count': ch_count,
+                    'meaningful_tags': meaningful_tags,
+                    'meaningful_count': len(meaningful_tags)
+                }
+                row_analysis.append(analysis)
+                
+                self.logger.debug(f"第{idx+1}行: CH={ch_count}, 用戶標籤={len(meaningful_tags)}")
+                
+            except Exception as e:
+                self.logger.debug(f"第{idx+1}行分析失敗: {e}")
+                continue
         
-        # 尋找CH行（簡潔顯示）
+        # 尋找CH行
         for analysis in row_analysis:
             if analysis['ch_count'] >= 3:
                 ch_row_idx = analysis['row_idx']
-                st.write(f"✅ 找到CH行在第{ch_row_idx+1}行 (含{analysis['ch_count']}個CH欄位)")
+                self.logger.debug(f"找到CH行在第{ch_row_idx+1}行")
                 break
         
-        # 尋找Tag行（簡潔顯示主要結果）
+        # 尋找Tag行
         if ch_row_idx is not None:
-            # 檢查CH行附近的行
-            tag_candidates = []
-            for analysis in row_analysis:
-                if (analysis['row_idx'] != ch_row_idx and 
-                    analysis['row_idx'] < header_row):
-                    tag_candidates.append(analysis)
+            tag_candidates = [a for a in row_analysis if a['row_idx'] != ch_row_idx and a['row_idx'] < header_row]
             
-            # 在摺疊區域內顯示詳細搜索過程
-            with st.expander("🔍 Tag行搜索詳細過程", expanded=False):
-                st.write(f"**Tag行候選: {[a['row_idx']+1 for a in tag_candidates]}**")
-                
-                best_tag_row = None
-                max_tags = 0
-                
-                for candidate in tag_candidates:
-                    st.write(f"  檢查第{candidate['row_idx']+1}行:")
-                    st.write(f"    用戶標籤數量: {candidate['meaningful_count']}")
-                    st.write(f"    標籤內容: {candidate['meaningful_tags'][:5]}")
-                    
-                    if candidate['meaningful_count'] > 0:
-                        if candidate['meaningful_count'] > max_tags:
-                            max_tags = candidate['meaningful_count']
-                            best_tag_row = candidate
-                            st.write(f"    ✅ 目前最佳Tag行（標籤數: {max_tags}）")
-                        else:
-                            st.write(f"    ✓ 可用Tag行（標籤數: {candidate['meaningful_count']}）")
-                    else:
-                        st.write(f"    ❌ 無用戶標籤")
-                
-                if best_tag_row:
-                    tag_row_idx = best_tag_row['row_idx']
-                    st.write(f"  🎯 **選定Tag行**: 第{tag_row_idx+1}行（含{max_tags}個用戶標籤）")
+            best_tag_row = None
+            max_tags = 0
             
-            # 顯示簡潔的主要結果
-            if tag_row_idx is not None:
-                # 獲取最佳Tag行的信息
-                for analysis in row_analysis:
-                    if analysis['row_idx'] == tag_row_idx:
-                        st.write(f"✅ 找到Tag行在第{tag_row_idx+1}行 (含{analysis['meaningful_count']}個用戶標籤)")
-                        if analysis['meaningful_tags']:
-                            st.write(f"   🏷️ 用戶標籤樣本: {analysis['meaningful_tags'][:5]}")
-                        break
-        
-        # 最終結果預覽
-        if ch_row_idx is not None and tag_row_idx is not None:
-            st.success(f"🎯 搜索成功！CH行: 第{ch_row_idx+1}行，Tag行: 第{tag_row_idx+1}行")
+            for candidate in tag_candidates:
+                if candidate['meaningful_count'] > max_tags:
+                    max_tags = candidate['meaningful_count']
+                    best_tag_row = candidate
             
-            # 在摺疊區域內顯示詳細內容預覽
-            with st.expander("📋 CH/Tag行內容預覽", expanded=False):
-                try:
-                    file_content.seek(0)
-                    ch_row_content = pd.read_excel(file_content, header=None, skiprows=ch_row_idx, nrows=1).iloc[0]
-                    file_content.seek(0)
-                    tag_row_content = pd.read_excel(file_content, header=None, skiprows=tag_row_idx, nrows=1).iloc[0]
-                    
-                    # CH行預覽
-                    ch_values = [str(val) for val in ch_row_content if pd.notna(val)][:8]
-                    st.write(f"**CH行內容樣本:**")
-                    st.code(f"{ch_values}")
-                    
-                    # Tag行預覽，重點顯示用戶標籤
-                    tag_values = []
-                    user_tags = []
-                    for val in tag_row_content:
-                        if pd.notna(val):
-                            val_str = str(val).strip()
-                            tag_values.append(val_str)
-                            if self._is_meaningful_tag(val):
-                                user_tags.append(val_str)
-                    
-                    st.write(f"**Tag行內容樣本:**")
-                    st.code(f"{tag_values[:8]}")
-                    st.write(f"**識別的用戶標籤:**")
-                    st.code(f"{user_tags}")
-                    
-                except Exception as e:
-                    st.error(f"內容預覽失敗: {e}")
-                    
-        elif ch_row_idx is not None:
-            st.warning(f"⚠️ 只找到CH行: 第{ch_row_idx+1}行，將只使用CH行命名")
-        else:
-            st.error("❌ 未找到CH/Tag行")
+            if best_tag_row:
+                tag_row_idx = best_tag_row['row_idx']
+                self.logger.debug(f"找到Tag行在第{tag_row_idx+1}行(含{max_tags}個用戶標籤)")
         
         return ch_row_idx, tag_row_idx
     
     def _is_meaningful_tag(self, tag_val) -> bool:
-        """判斷Tag值是否有意義（用戶自定義代號）- 修正版"""
+        """判斷Tag值是否有意義（用戶自定義代號）"""
         if pd.isna(tag_val):
             return False
             
@@ -866,66 +810,44 @@ class YokogawaParser(LogParser):
         if tag_str in ['', 'nan', 'NaN', 'None']:
             return False
             
-        # 🔧 修正：不要排除所有的 "Tag" 詞，只排除單獨的 "Tag"
+        # 排除單獨的 "Tag"
         if tag_str.upper() == 'TAG':
             return False
             
-        # 排除其他明顯的標題詞，但保留可能的用戶標籤
+        # 排除系統標題詞
         system_titles = ['CHANNEL', 'CH', 'POINT', 'TEMP', 'SENSOR']
         if tag_str.upper() in system_titles:
             return False
             
-        # 🔧 重要修正：不要排除看起來像數據的短字符串
-        # 像 U5, U19, L8 這樣的用戶標籤很可能被誤判為無意義
-        
-        # 如果是單個字母+數字的組合，很可能是用戶標籤（如 U5, U19, L8）
+        # 字母+數字組合，很可能是用戶標籤（如 U5, U19, L8）
         if len(tag_str) <= 4 and any(c.isalpha() for c in tag_str) and any(c.isdigit() for c in tag_str):
             return True
             
-        # 如果包含下劃線，很可能是用戶標籤（如 CPU_Tc）
+        # 包含下劃線，很可能是用戶標籤（如 CPU_Tc）
         if '_' in tag_str:
             return True
             
-        # 排除看起來純數字且像測量數據的值（但保留短數字，可能是編號）
+        # 排除看起來像測量數據的數字
         try:
             float_val = float(tag_str)
-            # 如果是看起來像測量數據的數字（溫度範圍、帶小數點的長數字），排除
             if (0 <= float_val <= 200 and '.' in tag_str and len(tag_str) > 4):
                 return False
-            # 短數字可能是編號，保留
             elif len(tag_str) <= 3:
                 return True
         except ValueError:
-            pass  # 不是數字，繼續檢查
+            pass
             
-        # 🔧 對於其他情況，只要長度大於1就認為是有意義的（降低門檻）
+        # 其他情況，長度大於1就認為是有意義的
         if len(tag_str) >= 2:
             return True
             
         return False
     
-    def _is_valid_ch(self, ch_val) -> bool:
-        """判斷CH值是否有效"""
-        if pd.isna(ch_val):
-            return False
-            
-        ch_str = str(ch_val).strip()
-        
-        # 排除空值
-        if ch_str in ['', 'nan', 'NaN', 'None']:
-            return False
-            
-        # 必須是CH開頭或包含CH的格式
-        if ch_str.upper().startswith('CH') or 'CH' in ch_str.upper():
-            return True
-            
-        return False
-    
     def _perform_renaming(self, df: pd.DataFrame, ch_row: pd.Series, tag_row: pd.Series) -> pd.DataFrame:
-        """執行重命名邏輯 - 簡潔界面版"""
-        st.write("🔄 開始智能重命名處理 (Tag優先, CH備選)...")
+        """靜默執行重命名邏輯"""
+        self.logger.debug("開始智能重命名處理")
         
-        # 定義需要保護的關鍵欄位
+        # 保護關鍵欄位
         protected_columns = {
             'Date', 'TIME', 'Time', 'time', 'DATE', 'date',
             'DateTime', 'DATETIME', 'datetime', 
@@ -934,9 +856,6 @@ class YokogawaParser(LogParser):
         }
         
         new_column_names = {}
-        rename_log = []
-        
-        # 統計信息
         tag_used = 0
         ch_used = 0
         protected_count = 0
@@ -946,101 +865,68 @@ class YokogawaParser(LogParser):
             # 保護關鍵欄位
             if original_col in protected_columns:
                 final_name = original_col
-                rename_log.append(f"欄位{i+1}: '{original_col}' → 🛡️保護欄位")
                 protected_count += 1
                 new_column_names[original_col] = final_name
                 continue
             
-            # 獲取Tag值（用戶自定義代號）
+            # 獲取Tag值
             tag_name = ""
             if i < len(tag_row):
                 tag_val = tag_row.iloc[i]
                 if self._is_meaningful_tag(tag_val):
                     tag_name = str(tag_val).strip()
             
-            # 獲取CH值（CH編號）
+            # 獲取CH值
             ch_name = ""
             if i < len(ch_row):
                 ch_val = ch_row.iloc[i]
-                if self._is_valid_ch(ch_val):
+                if pd.notna(ch_val) and str(ch_val).strip().upper().startswith('CH'):
                     ch_name = str(ch_val).strip()
             
-            # 決定最終名稱：Tag優先，CH備選，原名保持
+            # 決定最終名稱
             if tag_name:
                 final_name = tag_name
-                rename_log.append(f"欄位{i+1}: '{original_col}' → 🏷️Tag'{tag_name}'")
                 tag_used += 1
             elif ch_name:
                 final_name = ch_name
-                rename_log.append(f"欄位{i+1}: '{original_col}' → 📋CH'{ch_name}'")
                 ch_used += 1
             else:
                 final_name = original_col
-                rename_log.append(f"欄位{i+1}: '{original_col}' → 📝保持原名")
                 original_kept += 1
             
             new_column_names[original_col] = final_name
         
-        # 在摺疊區域內顯示詳細重命名計劃
-        with st.expander("📝 詳細重命名計劃", expanded=False):
-            st.write("**重命名決策過程：**")
-            for log_entry in rename_log[:15]:  # 顯示前15個
-                st.write(f"  {log_entry}")
-            
-            if len(rename_log) > 15:
-                st.write(f"  ... 還有 {len(rename_log) - 15} 個欄位")
-            
-            # 顯示重命名樣本
-            actual_changes = [(old, new) for old, new in new_column_names.items() if old != new and old not in protected_columns]
-            if len(actual_changes) > 0:
-                st.write("**重命名樣本：**")
-                for old, new in actual_changes[:8]:
-                    st.write(f"  '{old}' → '{new}'")
-        
         # 執行重命名
         df.rename(columns=new_column_names, inplace=True)
         
-        # 顯示簡潔的統計結果
-        st.success("✅ 智能重命名完成！")
-        
-        # 使用 columns 來並排顯示統計信息
-        col1, col2, col3, col4 = st.columns(4)
-        
-        with col1:
-            st.metric("🏷️ Tag命名", f"{tag_used} 個")
-        with col2:
-            st.metric("📋 CH命名", f"{ch_used} 個")
-        with col3:
-            st.metric("🛡️ 保護欄位", f"{protected_count} 個")
-        with col4:
-            st.metric("📝 保持原名", f"{original_kept} 個")
+        self.logger.debug(f"重命名完成: Tag={tag_used}, CH={ch_used}, 保護={protected_count}, 原名={original_kept}")
         
         return df
     
     def _process_time_and_finalize(self, df: pd.DataFrame, time_column: str, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
         """處理時間並完成解析"""
-        st.write("⏰ 開始處理時間數據...")
+        self.logger.debug("處理時間數據")
         time_series = df[time_column].astype(str).str.strip()
         
         try:
             df['time_index'] = pd.to_timedelta(time_series + ':00').fillna(pd.to_timedelta('00:00:00'))
             if df['time_index'].isna().all():
                 raise ValueError("Timedelta 轉換失敗")
-            st.write("✅ 時間解析成功 (Timedelta格式)")
+            self.logger.debug("時間解析成功 (Timedelta格式)")
         except:
             try:
                 datetime_series = pd.to_datetime(time_series, format='%H:%M:%S', errors='coerce')
                 if datetime_series.notna().sum() == 0:
                     datetime_series = pd.to_datetime(time_series, errors='coerce')
                 df['time_index'] = datetime_series - datetime_series.iloc[0]
-                st.write("✅ 時間解析成功 (DateTime格式)")
+                self.logger.debug("時間解析成功 (DateTime格式)")
             except Exception as e:
-                st.write(f"❌ 時間解析失敗: {e}")
+                self.logger.error(f"時間解析失敗: {e}")
                 return None
         
         valid_times_mask = df['time_index'].notna()
         if valid_times_mask.sum() == 0:
-            st.write("❌ 沒有有效的時間數據")
+            self.logger.error("沒有有效的時間數據")
             return None
         
         df = df[valid_times_mask].copy()
@@ -1051,26 +937,13 @@ class YokogawaParser(LogParser):
         
         # 數值轉換
         numeric_columns = df.select_dtypes(include=['number']).columns
-        numeric_converted = 0
-        for col in numeric_columns:
-            if col != 'time_index':
-                try:
-                    df[col] = pd.to_numeric(df[col], errors='coerce')
-                    numeric_converted += 1
-                except:
-                    pass
+        numeric_converted = len(numeric_columns)
         
-        st.write(f"🔢 數值轉換完成，處理了 {numeric_converted} 個欄位")
+        self.logger.debug(f"數值轉換完成，處理了 {numeric_converted} 個欄位")
         
         # 添加前綴
-        st.write("🏷️ 添加YOKO前綴...")
-        before_prefix = list(df.columns)[:5]
         df = df.add_prefix('YOKO: ')
         df.rename(columns={'YOKO: time_index': 'time_index'}, inplace=True)
-        after_prefix = list(df.columns)[:5]
-        
-        st.write(f"  前綴前: {before_prefix}")
-        st.write(f"  前綴後: {after_prefix}")
         
         result_df = df.set_index('time_index')
         
@@ -1087,18 +960,16 @@ class YokogawaParser(LogParser):
             file_size_kb=file_size_kb
         )
         
-        st.write(f"🎉 YOKOGAWA v10.3.4 用戶數據修正解析完成！")
-        st.write(f"📊 最終數據形狀: {result_df.shape}")
-        st.write(f"🏷️ 最終欄位樣本: {list(result_df.columns)[:8]}...")
+        self.logger.success(f"YOKOGAWA v10.3.6 解析完成！數據形狀: {result_df.shape}")
         
         return LogData(result_df, metadata)
 
 # =============================================================================
-# 3. 解析器註冊系統 (Parser Registry)
+# 3. 解析器註冊系統 (Parser Registry) - 超簡潔版
 # =============================================================================
 
 class ParserRegistry:
-    """解析器註冊系統"""
+    """解析器註冊系統 - 超簡潔版"""
     
     def __init__(self):
         self.parsers: List[LogParser] = []
@@ -1108,25 +979,42 @@ class ParserRegistry:
         self.parsers.append(parser)
     
     def parse_file(self, uploaded_file) -> Optional[LogData]:
-        """解析檔案，自動選擇合適的解析器"""
+        """解析檔案，自動選擇合適的解析器 - 靜默版本"""
         filename = uploaded_file.name
         file_content = io.BytesIO(uploaded_file.getvalue())
         is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
         
-        st.write(f"🔍 檔案分析: {filename} (Excel: {is_excel})")
+        # 創建一個臨時的日誌收集器來顯示解析摘要
+        parsing_summary = {"attempted": [], "successful": None, "failed": []}
         
         for parser in self.parsers:
             try:
                 file_content.seek(0)
+                parsing_summary["attempted"].append(parser.log_type)
+                
                 if parser.can_parse(file_content, filename):
-                    st.write(f"🎯 使用 {parser.log_type} 解析器")
                     file_content.seek(0)
                     result = parser.parse(file_content, filename)
                     if result is not None:
+                        parsing_summary["successful"] = parser.log_type
+                        # 顯示解析摘要
+                        parser.logger.show_summary(filename, parser.log_type)
+                        # 顯示詳細日誌（摺疊）
+                        parser.logger.show_detailed_logs(filename)
                         return result
+                    else:
+                        parsing_summary["failed"].append(parser.log_type)
             except Exception as e:
-                st.write(f"⚠️ {parser.log_type} 解析器失敗: {e}")
+                parsing_summary["failed"].append(f"{parser.log_type} (異常: {str(e)[:50]})")
                 continue
+        
+        # 如果所有解析器都失敗
+        st.error(f"❌ 無法解析檔案 {filename}")
+        with st.expander(f"🔍 解析失敗詳情 - {filename}", expanded=False):
+            st.write(f"**嘗試的解析器:** {', '.join(parsing_summary['attempted'])}")
+            if parsing_summary["failed"]:
+                st.write(f"**失敗的解析器:** {', '.join(parsing_summary['failed'])}")
+            st.write("**建議:** 確認檔案格式是否正確，或聯繫技術支援")
         
         return None
 
@@ -1160,7 +1048,7 @@ class StatisticsCalculator:
         
         temp_df = pd.DataFrame(temp_stats) if temp_stats else None
         
-        # GPU功耗統計 - 只顯示指定的三個項目
+        # GPU功耗統計
         power_stats = []
         target_power_items = ['NVVDD', 'FBVDD', 'TGP']
         
@@ -1645,12 +1533,12 @@ class GPUMonRenderer:
         """渲染完整UI"""
         st.markdown("""
         <div class="gpumon-box">
-            <h4>🎮 GPUMon Log 成功解析！</h4>
+            <h4>🎮 GPUMon Log 解析完成！</h4>
             <p>已識別為GPU監控數據，包含溫度、功耗、頻率等指標</p>
         </div>
         """, unsafe_allow_html=True)
         
-        st.success(f"✅ 數據載入成功：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
+        st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
         left_col, right_col, x_range, left_y_range, right_y_range = self.render_controls()
         
@@ -1727,12 +1615,12 @@ class PTATRenderer:
         """渲染完整UI"""
         st.markdown("""
         <div class="info-box">
-            <h4>🖥️ PTAT Log 成功解析！</h4>
+            <h4>🖥️ PTAT Log 解析完成！</h4>
             <p>已識別為CPU性能監控數據，包含頻率、功耗、溫度等指標</p>
         </div>
         """, unsafe_allow_html=True)
         
-        st.success(f"✅ 數據載入成功：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
+        st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
         left_y_axis, right_y_axis, x_range, left_y_range, right_y_range = self.render_controls()
         
@@ -1758,7 +1646,7 @@ class PTATRenderer:
                 st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
 class YokogawaRenderer:
-    """YOKOGAWA UI渲染器"""
+    """YOKOGAWA UI渲染器 - v10.3.6 超簡潔版"""
     
     def __init__(self, log_data: LogData):
         self.log_data = log_data
@@ -1769,12 +1657,12 @@ class YokogawaRenderer:
         """渲染完整UI"""
         st.markdown("""
         <div class="success-box">
-            <h4>📊 YOKOGAWA Log 成功解析！(v10.3.5 簡潔界面版)</h4>
-            <p>已識別為溫度記錄儀數據，正確識別用戶標籤，詳細日誌可摺疊查看，界面簡潔清爽</p>
+            <h4>📊 YOKOGAWA Log 解析完成！ (v10.3.6 超簡潔版)</h4>
+            <p>✨ 智能解析成功，界面清爽，詳細日誌已隱藏在下拉選單中</p>
         </div>
         """, unsafe_allow_html=True)
         
-        st.success(f"✅ 數據載入成功：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
+        st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
         st.sidebar.markdown("### ⚙️ YOKOGAWA 圖表設定")
         chart_mode = st.sidebar.radio("📈 圖表模式", ["全通道溫度圖", "自定義雙軸圖"])
@@ -1862,7 +1750,7 @@ class RendererFactory:
             return None
 
 # =============================================================================
-# 8. 主應用程式 (Main Application)
+# 8. 主應用程式 (Main Application) - 超簡潔版
 # =============================================================================
 
 def display_version_info():
@@ -1871,31 +1759,31 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🆕 v10.3.5 Dynamic Keyword Search - Clean UI 更新內容：
-        - 🎨 **簡潔界面設計** - 詳細解析日誌隱藏在下拉選單中，界面更清爽
-        - 📊 **重要信息突出** - 主要結果清晰顯示，詳細過程可選擇查看
-        - 🔍 **摺疊式調試區** - 文件分析、Tag搜索、重命名計劃都可摺疊
-        - 📈 **統計信息視覺化** - 使用卡片式指標顯示重命名統計
-        - 🎯 **保持完整功能** - 所有調試信息依然完整，只是界面更整潔
-        - 🏷️ **用戶標籤識別** - 繼續正確識別 CPU_Tc, U5, U19 等用戶標籤
-        - 🛡️ **關鍵欄位保護** - Date、Time等重要欄位永不被重命名
+        ### 🎨 v10.3.6 Ultra Clean Interface 更新內容：
+        - 🧹 **超簡潔界面** - 所有解析資訊完全隱藏在下拉選單中
+        - 📊 **主界面極簡** - 只顯示結果摘要，無冗餘信息
+        - 🔍 **詳細日誌可選** - 解析過程、調試信息等都在摺疊區域內
+        - ✨ **一鍵查看** - 需要時點擊展開即可查看完整解析過程
+        - 📈 **功能完整保留** - 所有分析功能一個不少，只是界面更乾淨
+        - 🎯 **用戶體驗優化** - 聚焦於結果展示，降低視覺干擾
         
-        ### 🔄 解析策略對比：
-        - **v10.2**: 固定行號 [29, 28, 30, 27] → 需要完整檔案
-        - **v10.3.5**: 簡潔界面版 → 保持全功能，詳細日誌摺疊隱藏，界面更清爽
+        ### 🔄 界面演進歷程：
+        - **v10.2**: 詳細日誌直接顯示 → 信息豐富但冗長
+        - **v10.3.5**: 簡潔界面版 → 部分摺疊，部分簡化
+        - **v10.3.6**: 超簡潔界面版 → **所有解析資訊完全隱藏**
         
-        ### 🏗️ 技術特點：
-        - **三階段搜索**: 關鍵字 → 結構 → 預設值
-        - **智能重命名**: Tag優先 → CH備選 → 原名保留
-        - **動態適應**: 擴大搜索範圍，提高識別率
-        - **詳細日誌**: 完整的解析過程追蹤
+        ### 💡 設計哲學：
+        - **結果導向** - 用戶主要關心解析結果，不是過程
+        - **可選詳情** - 需要調試時可隨時查看詳細信息
+        - **視覺舒適** - 減少信息過載，提升使用體驗
+        - **功能完整** - 不犧牲任何功能，只優化展示方式
         
         ---
-        💡 **使用建議：** 完整檔案效果最佳，部分檔案亦可使用！
+        💡 **使用建議：** 正常使用時界面清爽，需要調試時點擊展開詳細日誌！
         """)
 
 def main():
-    """主程式 - v10.3.5 Dynamic Keyword Search - Clean UI"""
+    """主程式 - v10.3.6 Ultra Clean Interface"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1951,7 +1839,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>📊 溫度數據視覺化平台</h1>
-        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件，支援動態關鍵字搜索</p>
+        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 超簡潔界面</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1972,7 +1860,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.5 支援 YOKOGAWA 完整/部分檔案、PTAT CSV、GPUMon CSV"
+        help="v10.3.6 超簡潔界面 - 所有解析資訊自動隱藏"
     )
     
     # 顯示訪問計數器
@@ -1988,9 +1876,7 @@ def main():
         
         st.sidebar.markdown("---")
         
-        # 解析檔案
-        st.markdown("### 🔍 v10.3.5 簡潔解析界面")
-        
+        # 解析檔案 - 超簡潔版本
         log_data_list = []
         for uploaded_file in uploaded_files:
             log_data = parser_registry.parse_file(uploaded_file)
@@ -2029,7 +1915,7 @@ def main():
                 
                 combined_log_data = LogData(combined_df, combined_metadata)
                 
-                st.success(f"✅ 合併數據載入成功：{combined_log_data.metadata.rows} 行 × {combined_log_data.metadata.columns} 列")
+                st.success(f"📊 合併數據載入：{combined_log_data.metadata.rows} 行 × {combined_log_data.metadata.columns} 列")
                 
                 numeric_columns = combined_log_data.numeric_columns
                 if numeric_columns:
@@ -2093,14 +1979,21 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據（完整/部分檔案）
         
-        ### 🔍 v10.3 Dynamic Keyword Search 新功能
+        ### ✨ v10.3.6 Ultra Clean Interface 特色
         
-        - **🔍 動態關鍵字搜索** - 智能識別Header行，不依賴固定位置
+        - **🧹 極簡界面** - 所有解析資訊完全隱藏，主界面只顯示結果
+        - **🔍 詳細日誌可選** - 需要時點擊「詳細解析日誌」查看完整過程
+        - **📊 智能解析** - 保留完整的動態關鍵字搜索和智能重命名功能
+        - **🎯 結果導向** - 聚焦於分析結果，減少視覺干擾
+        - **📈 功能完整** - 所有分析功能一個不少，只是展示更優雅
+        
+        ### 🔍 動態關鍵字搜索技術
+        
+        - **🔍 三階段搜索** - 關鍵字 → 結構 → 預設值逐層搜索
+        - **🏷️ 智能標籤識別** - 自動識別用戶標籤（CPU_Tc, U5, U19等）
         - **📊 完整/部分檔案支援** - 完整檔案享受智能重命名，部分檔案亦可解析
-        - **🏷️ 智能CH/Tag識別** - 自動找到通道標籤信息並重命名
-        - **🎯 三階段容錯** - 關鍵字 → 結構 → 預設值逐層搜索
         - **🌐 多語言關鍵詞** - 支援中英文時間相關關鍵詞
-        - **📏 全面Y軸控制** - 所有Log類型都支援雙軸範圍調整
+        - **🛡️ 關鍵欄位保護** - Date、Time等重要欄位永不被重命名
         
         ### 💡 使用建議
         
@@ -2122,16 +2015,15 @@ def main():
         💡 仍可進行數據分析
         ```
         
-        ### 🔧 v10.3.5 技術特點
+        ### 🎨 界面設計理念
         
-        - **簡潔界面設計** - 使用Streamlit expander將詳細日誌摺疊，主界面更清爽
-        - **視覺化統計信息** - 使用st.metric卡片式顯示重命名統計，一目了然
-        - **用戶數據專用優化** - 針對實際用戶文件結構(CPU_Tc, U5, U19等)優化識別邏輯
-        - **智能標籤識別算法** - 支援多種用戶標籤格式：字母+數字、下劃線、短編號
-        - **最佳行選擇策略** - 自動選擇標籤數量最多的行，確保找到真正的Tag行
-        - **完整調試功能** - 所有調試信息依然完整，只是界面組織更好
-        - **用戶需求導向** - 完全按照「Tag優先，CH備選」的命名邏輯設計
-        - **關鍵欄位保護** - Date、Time等欄位永不被重命名
+        - **極簡主義** - 去除一切不必要的視覺元素
+        - **用戶友好** - 新手看到簡潔界面，專家可查看詳細日誌
+        - **信息分層** - 重要信息突出，詳細信息隱藏但可訪問
+        - **視覺舒適** - 減少信息過載，提升使用體驗
+        
+        ---
+        💡 **v10.3.6 核心優勢：** 保持完整功能的同時，提供最清爽的用戶界面！
         """)
 
 if __name__ == "__main__":
