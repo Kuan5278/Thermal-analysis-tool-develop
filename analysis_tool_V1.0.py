@@ -1,5 +1,5 @@
-# thermal_analysis_platform_v10.3.7.py
-# 溫度數據視覺化平台 - v10.3.7 多檔案獨立分析版
+# thermal_analysis_platform_v10.3.8.py
+# 溫度數據視覺化平台 - v10.3.8 多檔案獨立分析 + Summary整合版
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3.7 Multi-File Independent Analysis"
+VERSION = "v10.3.8 Multi-File Analysis with Summary"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -586,7 +586,7 @@ class PTATParser(LogParser):
             return None
 
 class YokogawaParser(LogParser):
-    """YOKOGAWA解析器 - v10.3.7 超簡潔版本"""
+    """YOKOGAWA解析器 - v10.3.8 超簡潔版本"""
     
     @property
     def log_type(self) -> str:
@@ -597,7 +597,7 @@ class YokogawaParser(LogParser):
         return True
     
     def parse(self, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
-        self.logger.info(f"啟動YOKOGAWA解析器 (v10.3.7超簡潔版) - {filename}")
+        self.logger.info(f"啟動YOKOGAWA解析器 (v10.3.8超簡潔版) - {filename}")
         
         try:
             is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
@@ -960,7 +960,7 @@ class YokogawaParser(LogParser):
             file_size_kb=file_size_kb
         )
         
-        self.logger.success(f"YOKOGAWA v10.3.7 解析完成！數據形狀: {result_df.shape}")
+        self.logger.success(f"YOKOGAWA v10.3.8 解析完成！數據形狀: {result_df.shape}")
         
         return LogData(result_df, metadata)
 
@@ -1274,7 +1274,163 @@ class StatisticsCalculator:
         return pd.DataFrame(stats_data)
 
 # =============================================================================
-# 5. 圖表生成層 (Chart Generation Layer)
+# 5. Summary溫度整合表格生成器 (Temperature Summary Generator)
+# =============================================================================
+
+class TemperatureSummaryGenerator:
+    """溫度整合摘要生成器 - v10.3.8新增"""
+    
+    @staticmethod
+    def generate_summary_table(log_data_list: List[LogData]) -> pd.DataFrame:
+        """生成溫度摘要表格，按照用戶提供的格式"""
+        summary_data = []
+        ch_number = 1
+        
+        for log_data in log_data_list:
+            df = log_data.df
+            log_type = log_data.metadata.log_type
+            filename = log_data.metadata.filename
+            
+            # 獲取所有數值型欄位
+            numeric_cols = df.select_dtypes(include=['number']).columns
+            temp_cols = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
+            
+            for col in temp_cols:
+                temp_data = pd.to_numeric(df[col], errors='coerce').dropna()
+                if len(temp_data) > 0:
+                    max_temp = temp_data.max()
+                    
+                    # 清理欄位名稱
+                    clean_col_name = col
+                    if clean_col_name.startswith('YOKO: '):
+                        clean_col_name = clean_col_name.replace('YOKO: ', '')
+                    elif clean_col_name.startswith('PTAT: '):
+                        clean_col_name = clean_col_name.replace('PTAT: ', '')
+                    elif clean_col_name.startswith('GPU: '):
+                        clean_col_name = clean_col_name.replace('GPU: ', '')
+                    
+                    # 跳過非溫度相關欄位
+                    if clean_col_name.lower() in ['sec', 'time', 'rt', 'date', 'iteration']:
+                        continue
+                    
+                    # 判斷規格溫度和參考溫度
+                    spec_temp = ""
+                    ref_temp = ""
+                    spec_location = ""
+                    description = ""
+                    
+                    # 根據不同log類型和欄位名稱設定規格
+                    if "GPU" in log_type:
+                        if "Temperature" in clean_col_name:
+                            spec_temp = "105"  # GPU一般規格
+                            ref_temp = "-"
+                            spec_location = "J"
+                            description = "GPU Temperature"
+                    elif "PTAT" in log_type:
+                        if "MSR" in clean_col_name and "Package" in clean_col_name:
+                            spec_temp = "125"  # CPU Package 一般規格
+                            ref_temp = "100"
+                            spec_location = "J"
+                            description = "CPU MSR Package Temperature"
+                        elif "Core" in clean_col_name and "frequency" not in clean_col_name.lower():
+                            spec_temp = "105"  # CPU Core 一般規格
+                            ref_temp = "-"
+                            spec_location = "J"
+                            description = "CPU Core Temperature"
+                    else:  # YOKOGAWA或其他
+                        # 根據欄位名稱推測類型
+                        if any(keyword in clean_col_name.upper() for keyword in ['CPU', 'PROCESSOR']):
+                            spec_temp = "105"
+                            ref_temp = "-"
+                            spec_location = "J"
+                            description = "CPU"
+                        elif any(keyword in clean_col_name.upper() for keyword in ['SSD', 'STORAGE']):
+                            spec_temp = "85"
+                            ref_temp = "-"
+                            spec_location = "J"
+                            description = "SSD"
+                        elif any(keyword in clean_col_name.upper() for keyword in ['DDR', 'MEMORY', 'RAM']):
+                            spec_temp = "95"
+                            ref_temp = "95"
+                            spec_location = "C"
+                            description = "Memory"
+                        elif any(keyword in clean_col_name.upper() for keyword in ['WIFI', 'WIRELESS']):
+                            spec_temp = "85"
+                            ref_temp = "105"
+                            spec_location = "A"
+                            description = "WIFI"
+                        else:
+                            # 預設值
+                            spec_temp = "85"
+                            ref_temp = "105"
+                            spec_location = "A"
+                            description = ""
+                    
+                    # 格式化溫度值
+                    if max_temp > 200:  # 可能是毫度或其他單位
+                        formatted_temp = f"{max_temp/1000:.1f}" if max_temp > 1000 else f"{max_temp:.1f}"
+                    else:
+                        formatted_temp = f"{max_temp:.1f}"
+                    
+                    summary_data.append({
+                        'Ch.': ch_number,
+                        'Location': clean_col_name,
+                        'Description': description,
+                        'Spec location': spec_location,
+                        'spec': spec_temp,
+                        'Ref Tc spec': ref_temp,
+                        'Result (Case Temp)': formatted_temp,
+                        'Source File': filename,
+                        'Log Type': log_type
+                    })
+                    
+                    ch_number += 1
+        
+        return pd.DataFrame(summary_data)
+    
+    @staticmethod
+    def format_summary_table_for_display(summary_df: pd.DataFrame) -> pd.DataFrame:
+        """格式化表格以符合顯示要求"""
+        if summary_df.empty:
+            return pd.DataFrame()
+        
+        # 創建顯示用的DataFrame，不包含Source File和Log Type
+        display_df = summary_df[['Ch.', 'Location', 'Description', 'Spec location', 'spec', 'Ref Tc spec', 'Result (Case Temp)']].copy()
+        
+        return display_df
+    
+    @staticmethod
+    def get_summary_statistics(summary_df: pd.DataFrame) -> dict:
+        """獲取摘要統計信息"""
+        if summary_df.empty:
+            return {}
+        
+        try:
+            # 轉換溫度為數值
+            temps = pd.to_numeric(summary_df['Result (Case Temp)'], errors='coerce').dropna()
+            
+            stats = {
+                'total_channels': len(summary_df),
+                'max_temp': temps.max() if len(temps) > 0 else 0,
+                'min_temp': temps.min() if len(temps) > 0 else 0,
+                'avg_temp': temps.mean() if len(temps) > 0 else 0,
+                'files_analyzed': summary_df['Source File'].nunique() if 'Source File' in summary_df.columns else 0,
+                'log_types': summary_df['Log Type'].unique().tolist() if 'Log Type' in summary_df.columns else []
+            }
+            
+            return stats
+        except Exception:
+            return {
+                'total_channels': len(summary_df),
+                'max_temp': 0,
+                'min_temp': 0,
+                'avg_temp': 0,
+                'files_analyzed': 0,
+                'log_types': []
+            }
+
+# =============================================================================
+# 6. 圖表生成層 (Chart Generation Layer)
 # =============================================================================
 
 class ChartGenerator:
@@ -1411,7 +1567,7 @@ class ChartGenerator:
         return fig
 
 # =============================================================================
-# 6. UI渲染層 (UI Rendering Layer)
+# 7. UI渲染層 (UI Rendering Layer)
 # =============================================================================
 
 class GPUMonRenderer:
@@ -1657,7 +1813,7 @@ class PTATRenderer:
                 st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
 class YokogawaRenderer:
-    """YOKOGAWA UI渲染器 - v10.3.7 超簡潔版"""
+    """YOKOGAWA UI渲染器 - v10.3.8 超簡潔版"""
     
     def __init__(self, log_data: LogData):
         self.log_data = log_data
@@ -1672,7 +1828,7 @@ class YokogawaRenderer:
         
         st.markdown("""
         <div class="success-box">
-            <h4>📊 YOKOGAWA Log 解析完成！ (v10.3.7 多檔案獨立分析版)</h4>
+            <h4>📊 YOKOGAWA Log 解析完成！ (v10.3.8 多檔案獨立分析版)</h4>
             <p>✨ 智能解析成功，界面清爽，詳細日誌已隱藏在下拉選單中</p>
         </div>
         """, unsafe_allow_html=True)
@@ -1743,8 +1899,249 @@ class YokogawaRenderer:
         if not temp_stats.empty:
             st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
+class SummaryRenderer:
+    """Summary UI渲染器 - v10.3.8新增"""
+    
+    def __init__(self, log_data_list: List[LogData]):
+        self.log_data_list = log_data_list
+        self.summary_gen = TemperatureSummaryGenerator()
+    
+    def render(self):
+        """渲染Summary標籤頁內容"""
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 10px; margin-bottom: 2rem; color: white;">
+            <h3>📋 溫度整合摘要報告</h3>
+            <p>🎯 整合所有檔案的溫度數據，按照標準格式顯示最高溫度</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 生成摘要表格
+        summary_df = self.summary_gen.generate_summary_table(self.log_data_list)
+        
+        if summary_df.empty:
+            st.warning("⚠️ 沒有找到可用的溫度數據")
+            return
+        
+        # 顯示統計概覽
+        stats = self.summary_gen.get_summary_statistics(summary_df)
+        
+        # 統計卡片
+        col1, col2, col3, col4 = st.columns(4)
+        
+        with col1:
+            st.metric(
+                label="📊 總監控點",
+                value=f"{stats.get('total_channels', 0)}",
+                help="所有檔案中的溫度監控點總數"
+            )
+        
+        with col2:
+            st.metric(
+                label="🌡️ 最高溫度",
+                value=f"{stats.get('max_temp', 0):.1f}°C",
+                help="所有監控點中的最高溫度"
+            )
+        
+        with col3:
+            st.metric(
+                label="📁 分析檔案",
+                value=f"{stats.get('files_analyzed', 0)}",
+                help="成功分析的檔案數量"
+            )
+        
+        with col4:
+            st.metric(
+                label="📊 平均溫度",
+                value=f"{stats.get('avg_temp', 0):.1f}°C",
+                help="所有監控點的平均溫度"
+            )
+        
+        # 顯示檔案來源信息
+        if 'log_types' in stats and stats['log_types']:
+            with st.expander("📂 檔案來源詳情", expanded=False):
+                unique_files = summary_df['Source File'].unique() if 'Source File' in summary_df.columns else []
+                for i, filename in enumerate(unique_files, 1):
+                    file_data = summary_df[summary_df['Source File'] == filename] if 'Source File' in summary_df.columns else pd.DataFrame()
+                    if not file_data.empty:
+                        log_type = file_data['Log Type'].iloc[0] if 'Log Type' in file_data.columns else 'Unknown'
+                        channel_count = len(file_data)
+                        
+                        # 添加類型emoji
+                        if "GPUMon" in log_type:
+                            emoji = "🎮"
+                        elif "PTAT" in log_type:
+                            emoji = "🖥️"
+                        elif "YOKOGAWA" in log_type:
+                            emoji = "📊"
+                        else:
+                            emoji = "📄"
+                        
+                        st.write(f"**{i}.** {emoji} `{filename}` ({log_type}) - {channel_count} 個監控點")
+        
+        # 顯示整合表格
+        st.markdown("### 📋 溫度監控點整合表格")
+        
+        # 格式化顯示表格
+        display_df = self.summary_gen.format_summary_table_for_display(summary_df)
+        
+        if not display_df.empty:
+            # 自定義樣式
+            st.markdown("""
+            <style>
+            .temp-summary-table {
+                font-size: 0.9em;
+            }
+            .temp-summary-table th {
+                background-color: #f0f2f6;
+                font-weight: bold;
+                text-align: center;
+            }
+            .temp-summary-table td {
+                text-align: center;
+            }
+            </style>
+            """, unsafe_allow_html=True)
+            
+            # 顯示表格
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Ch.": st.column_config.NumberColumn("Ch.", width="small"),
+                    "Location": st.column_config.TextColumn("Location", width="medium"),
+                    "Description": st.column_config.TextColumn("Description", width="medium"),
+                    "Spec location": st.column_config.TextColumn("Spec location", width="small"),
+                    "spec": st.column_config.TextColumn("spec", width="small"),
+                    "Ref Tc spec": st.column_config.TextColumn("Ref Tc spec", width="small"),
+                    "Result (Case Temp)": st.column_config.NumberColumn(
+                        "Result (Case Temp)",
+                        width="medium",
+                        format="%.1f°C"
+                    )
+                }
+            )
+            
+            # 添加說明
+            with st.expander("📖 表格說明", expanded=False):
+                st.markdown("""
+                **表格欄位說明：**
+                
+                - **Ch.**: 通道編號，按順序排列
+                - **Location**: 監控點位置/名稱，來自log檔案的欄位名稱
+                - **Description**: 元件描述，根據名稱自動推測
+                - **Spec location**: 規格位置代碼
+                  - `J`: Junction Temperature (接面溫度)
+                  - `A`: Ambient Temperature (環境溫度)
+                  - `C`: Case Temperature (外殼溫度)
+                - **spec**: 規格溫度限制 (°C)
+                - **Ref Tc spec**: 參考測試溫度 (°C)
+                - **Result (Case Temp)**: 實測最高溫度 (°C)
+                
+                **數據來源：**
+                - 🎮 **GPUMon**: GPU溫度、功耗監控數據
+                - 🖥️ **PTAT**: CPU MSR Package溫度監控數據  
+                - 📊 **YOKOGAWA**: 多通道溫度記錄儀數據
+                
+                **溫度規格參考：**
+                - CPU: 105°C (Junction), 125°C (Package)
+                - GPU: 105°C (Junction)
+                - SSD: 85°C (Junction)
+                - Memory (DDR): 95°C (Case)
+                - 一般IC: 85°C (Ambient)
+                """)
+            
+            # 提供下載功能
+            st.markdown("### 💾 導出功能")
+            
+            # 準備完整數據（包含來源信息）
+            export_df = summary_df.copy()
+            
+            # 轉換為CSV
+            csv_data = export_df.to_csv(index=False, encoding='utf-8-sig')
+            
+            st.download_button(
+                label="📥 下載完整摘要表格 (CSV)",
+                data=csv_data,
+                file_name=f"temperature_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv",
+                help="下載包含來源檔案信息的完整摘要表格"
+            )
+            
+            # 顯示溫度分布圖
+            self._render_temperature_distribution_chart(summary_df)
+        
+        else:
+            st.error("❌ 無法生成摘要表格")
+    
+    def _render_temperature_distribution_chart(self, summary_df: pd.DataFrame):
+        """渲染溫度分布圖表"""
+        try:
+            if summary_df.empty or 'Result (Case Temp)' not in summary_df.columns:
+                return
+            
+            st.markdown("### 📊 溫度分布圖表")
+            
+            # 轉換溫度數據
+            temps = pd.to_numeric(summary_df['Result (Case Temp)'], errors='coerce').dropna()
+            
+            if len(temps) == 0:
+                st.warning("⚠️ 沒有有效的溫度數據用於繪圖")
+                return
+            
+            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+            
+            # 溫度直方圖
+            ax1.hist(temps, bins=min(10, len(temps)), alpha=0.7, color='skyblue', edgecolor='black')
+            ax1.set_title('溫度分布直方圖', fontsize=12, fontweight='bold')
+            ax1.set_xlabel('溫度 (°C)', fontsize=10)
+            ax1.set_ylabel('頻次', fontsize=10)
+            ax1.grid(True, alpha=0.3)
+            
+            # 溫度按通道圖
+            x_pos = range(len(temps))
+            bars = ax2.bar(x_pos, temps, alpha=0.7, color='lightcoral', edgecolor='black')
+            ax2.set_title('各通道溫度分布', fontsize=12, fontweight='bold')
+            ax2.set_xlabel('通道編號', fontsize=10)
+            ax2.set_ylabel('溫度 (°C)', fontsize=10)
+            ax2.grid(True, alpha=0.3)
+            
+            # 標註最高溫度
+            max_temp_idx = temps.idxmax()
+            max_temp_val = temps.max()
+            max_temp_pos = list(temps.index).index(max_temp_idx)
+            
+            ax2.annotate(f'最高: {max_temp_val:.1f}°C', 
+                        xy=(max_temp_pos, max_temp_val),
+                        xytext=(max_temp_pos, max_temp_val + max_temp_val * 0.1),
+                        arrowprops=dict(arrowstyle='->', color='red', lw=1.5),
+                        fontsize=9, ha='center', color='red', fontweight='bold')
+            
+            # 設定x軸標籤
+            if len(x_pos) <= 20:
+                ax2.set_xticks(x_pos[::max(1, len(x_pos)//10)])
+                ax2.set_xticklabels([str(i+1) for i in x_pos[::max(1, len(x_pos)//10)]])
+            else:
+                ax2.set_xticks(x_pos[::len(x_pos)//10])
+                ax2.set_xticklabels([str(i+1) for i in x_pos[::len(x_pos)//10]])
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+            
+            # 顯示統計信息
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("🌡️ 最高溫度", f"{temps.max():.1f}°C")
+            with col2:
+                st.metric("🧊 最低溫度", f"{temps.min():.1f}°C")
+            with col3:
+                st.metric("📊 溫度範圍", f"{temps.max() - temps.min():.1f}°C")
+            
+        except Exception as e:
+            st.error(f"❌ 圖表生成失敗: {e}")
+
 # =============================================================================
-# 7. UI工廠 (UI Factory)
+# 8. UI工廠 (UI Factory)
 # =============================================================================
 
 class RendererFactory:
@@ -1765,7 +2162,7 @@ class RendererFactory:
             return None
 
 # =============================================================================
-# 8. 主應用程式 (Main Application) - v10.3.7 多檔案獨立分析版
+# 9. 主應用程式 (Main Application) - v10.3.8 多檔案獨立分析 + Summary整合版
 # =============================================================================
 
 def display_version_info():
@@ -1774,33 +2171,46 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🎨 v10.3.7 Multi-File Independent Analysis 更新內容：
-        - 🎯 **多檔案獨立分析** - 每個檔案單獨顯示圖表和統計數據，不再混合
-        - 📑 **標籤頁模式** - 使用tabs組織多個檔案，清晰明瞭
-        - 🔧 **智能檔案識別** - 每個標籤頁顯示對應的檔案類型emoji (🎮 GPUMon, 🖥️ PTAT, 📊 YOKOGAWA)
-        - 🎛️ **獨立控制面板** - 每個檔案的控制項完全獨立，避免衝突
-        - 📁 **詳細檔案資訊** - 每個標籤頁內顯示完整的檔案元數據
-        - 🔄 **側邊欄檔案選擇** - 可選擇要在側邊欄控制的特定檔案
+        ### 🎨 v10.3.8 Multi-File Analysis with Summary 更新內容：
+        - 📋 **Summary整合標籤頁** - 新增Summary標籤，整合所有檔案的溫度數據
+        - 📊 **標準表格格式** - 按照用戶提供的表格格式顯示溫度摘要
+        - 🌡️ **最高溫度提取** - 自動提取每個通道的最高溫度 (MAX temperature)
+        - 📈 **統計概覽** - 顯示總監控點數、最高溫度、檔案數量等統計信息
+        - 📊 **溫度分布圖** - 新增溫度分布直方圖和各通道溫度圖表
+        - 💾 **導出功能** - 支援CSV格式導出完整摘要表格
+        - 🎯 **智能分類** - 根據欄位名稱自動推測元件類型和規格溫度
+        - 📂 **來源追蹤** - 每個溫度數據都標記來源檔案和類型
         
         ### 🔄 界面演進歷程：
         - **v10.2**: 詳細日誌直接顯示 → 信息豐富但冗長
         - **v10.3.5**: 簡潔界面版 → 部分摺疊，部分簡化
         - **v10.3.6**: 超簡潔界面版 → 所有解析資訊完全隱藏
-        - **v10.3.7**: 多檔案獨立分析版 → **每個檔案獨立分析，不再混合**
+        - **v10.3.7**: 多檔案獨立分析版 → 每個檔案獨立分析，不再混合
+        - **v10.3.8**: Summary整合版 → **新增Summary標籤整合所有溫度數據**
+        
+        ### 🎯 Summary標籤頁特色：
+        - **📋 標準格式表格** - 完全按照用戶提供的表格格式顯示
+        - **🌡️ 最高溫度提取** - 每個通道取用MAX temperature
+        - **🎯 智能分類** - 自動推測CPU、GPU、SSD、Memory等元件類型
+        - **📊 規格溫度** - 根據元件類型自動設定規格溫度
+        - **📂 多檔案整合** - 將YOKOGAWA、PTAT、GPUMon的溫度數據統一整合
+        - **📈 視覺化分析** - 溫度分布圖和統計圖表
+        - **💾 數據導出** - 支援CSV格式下載
         
         ### 💡 設計哲學：
         - **結果導向** - 用戶主要關心解析結果，不是過程
+        - **整合分析** - Summary標籤提供跨檔案的整合視角
+        - **標準化輸出** - 按照業界標準格式顯示溫度摘要
         - **可選詳情** - 需要調試時可隨時查看詳細信息
         - **視覺舒適** - 減少信息過載，提升使用體驗
         - **功能完整** - 不犧牲任何功能，只優化展示方式
-        - **獨立分析** - 每個檔案都有專屬的完整分析結果
         
         ---
-        💡 **使用建議：** 上傳多個檔案時，每個檔案都會在專屬標籤頁中獨立分析！
+        💡 **v10.3.8 核心優勢：** 多檔案獨立分析 + Summary整合視角，最佳的溫度數據分析體驗！
         """)
 
 def main():
-    """主程式 - v10.3.7 Multi-File Independent Analysis"""
+    """主程式 - v10.3.8 Multi-File Analysis with Summary"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1849,6 +2259,17 @@ def main():
             border-radius: 0.25rem;
             border: 1px solid #dee2e6;
         }
+        .temp-summary-table {
+            font-size: 0.9em;
+        }
+        .temp-summary-table th {
+            background-color: #f0f2f6;
+            font-weight: bold;
+            text-align: center;
+        }
+        .temp-summary-table td {
+            text-align: center;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -1856,7 +2277,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>📊 溫度數據視覺化平台</h1>
-        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析</p>
+        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1877,7 +2298,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.7 多檔案獨立分析 - 每個檔案單獨顯示結果"
+        help="v10.3.8 多檔案獨立分析 + Summary整合 - 每個檔案單獨顯示結果，Summary標籤整合所有溫度數據"
     )
     
     # 顯示訪問計數器
@@ -1916,11 +2337,16 @@ def main():
                 st.error(f"不支援的Log類型: {log_data.metadata.log_type}")
         
         else:
-            # 多檔案模式 - 每個檔案獨立顯示
+            # 多檔案模式 - 每個檔案獨立顯示 + Summary整合
             st.success(f"📊 多檔案分析模式：成功解析 {len(log_data_list)} 個檔案")
             
-            # 創建標籤頁，每個檔案一個標籤
+            # 創建標籤頁，每個檔案一個標籤 + Summary標籤
             tab_names = []
+            
+            # 首先添加Summary標籤
+            tab_names.append("📋 Summary")
+            
+            # 然後添加各個檔案的標籤
             for i, log_data in enumerate(log_data_list):
                 # 生成標籤名稱
                 filename = log_data.metadata.filename
@@ -1950,8 +2376,13 @@ def main():
             # 創建標籤頁
             tabs = st.tabs(tab_names)
             
-            # 為每個檔案渲染獨立的內容
-            for i, (tab, log_data) in enumerate(zip(tabs, log_data_list)):
+            # 首先渲染Summary標籤頁
+            with tabs[0]:
+                summary_renderer = SummaryRenderer(log_data_list)
+                summary_renderer.render()
+            
+            # 然後為每個檔案渲染獨立的內容
+            for i, (tab, log_data) in enumerate(zip(tabs[1:], log_data_list)):
                 with tab:
                     # 顯示檔案資訊
                     st.markdown(f"""
@@ -2012,21 +2443,26 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據（完整/部分檔案）
         
-        ### ✨ v10.3.7 Multi-File Independent Analysis 特色
+        ### ✨ v10.3.8 Multi-File Analysis with Summary 特色
         
+        - 📋 **Summary整合標籤頁** - 新增Summary標籤，按標準格式整合所有溫度數據
+        - 🌡️ **最高溫度提取** - 自動提取每個通道的MAX temperature
+        - 📊 **智能分類** - 根據欄位名稱自動推測元件類型和規格溫度
         - 🎯 **多檔案獨立分析** - 每個log檔案都有專屬的分析結果和控制面板
         - 📑 **智能標籤分組** - 使用標籤頁將不同檔案清晰分離
         - 🔧 **檔案類型識別** - 自動識別並標記GPUMon、PTAT、YOKOGAWA檔案
         - 📊 **完整功能保留** - 每種檔案類型都享有完整的專業分析功能
-        - 🎛️ **獨立控制** - 每個檔案的圖表設定完全獨立，不會相互干擾
-        - 📁 **詳細資訊** - 每個檔案標籤頁內顯示完整的檔案元數據
+        - 💾 **數據導出** - Summary標籤支援CSV格式導出
         
-        ### 🎯 多檔案使用場景
+        ### 🎯 Summary標籤頁功能
         
-        - **🔬 多設備監控** - 同時上傳GPU、CPU、溫度計的log檔案
-        - **📊 對比分析** - 不同時間段或不同設定的檔案對比
-        - **🔄 批量處理** - 一次上傳多個檔案，逐一檢視分析結果
-        - **👥 團隊協作** - 不同團隊成員的測試結果集中分析
+        - **📋 標準表格** - 完全按照用戶提供的表格格式顯示溫度摘要
+        - **🌡️ 溫度整合** - 整合YOKOGAWA、PTAT、GPUMon的所有溫度數據
+        - **📊 統計概覽** - 顯示總監控點數、最高溫度、檔案數量等
+        - **📈 視覺化圖表** - 溫度分布直方圖和各通道溫度圖表
+        - **🎯 智能分類** - 自動推測CPU、GPU、SSD、Memory等元件類型
+        - **📂 來源追蹤** - 每個溫度數據都標記來源檔案和類型
+        - **💾 導出功能** - 支援CSV格式下載完整摘要表格
         
         ### 🔍 動態關鍵字搜索技術
         
@@ -2056,16 +2492,27 @@ def main():
         💡 仍可進行數據分析
         ```
         
+        #### 📋 **Summary標籤頁使用技巧**
+        
+        **🎯 最佳效果：多檔案上傳**
+        ```
+        ✅ 同時上傳YOKOGAWA、PTAT、GPUMon檔案
+        ✅ Summary自動整合所有溫度數據
+        ✅ 按標準格式顯示整合表格
+        ✅ 支援CSV導出用於報告
+        ```
+        
         ### 🎨 界面設計理念
         
         - **極簡主義** - 去除一切不必要的視覺元素
+        - **整合視角** - Summary提供跨檔案的統一視角
+        - **標準化輸出** - 按照業界標準格式顯示結果
         - **用戶友好** - 新手看到簡潔界面，專家可查看詳細日誌
         - **信息分層** - 重要信息突出，詳細信息隱藏但可訪問
         - **視覺舒適** - 減少信息過載，提升使用體驗
-        - **獨立分析** - 每個檔案都有專屬的完整分析結果
         
         ---
-        💡 **v10.3.7 核心優勢：** 多檔案獨立分析，每個檔案都有專屬的完整分析結果！
+        💡 **v10.3.8 核心優勢：** 多檔案獨立分析 + Summary整合視角 = 最完整的溫度數據分析解決方案！
         """)
 
 if __name__ == "__main__":
