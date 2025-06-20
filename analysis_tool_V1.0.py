@@ -1,5 +1,5 @@
-# thermal_analysis_platform_v10.3.4.py
-# 溫度數據視覺化平台 - v10.3.4 動態關鍵字搜索用戶數據修正版
+# thermal_analysis_platform_v10.3.5.py
+# 溫度數據視覺化平台 - v10.3.5 動態關鍵字搜索簡潔界面版
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3.4 Dynamic Keyword Search - User Data Fixed"
+VERSION = "v10.3.5 Dynamic Keyword Search - Clean UI"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -532,7 +532,7 @@ class YokogawaParser(LogParser):
         return True
     
     def parse(self, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
-        st.write(f"🚀 YOKOGAWA解析器啟動 (v10.3.4用戶數據修正版) - 檔案: {filename}")
+        st.write(f"🚀 YOKOGAWA解析器啟動 (v10.3.5簡潔界面版) - 檔案: {filename}")
         
         try:
             is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
@@ -589,7 +589,7 @@ class YokogawaParser(LogParser):
             # 🆕 動態重命名邏輯 - 搜索 CH 和 Tag 行
             if is_excel:
                 st.write("=" * 50)
-                st.write("🏷️ 開始YOKOGAWA欄位重命名邏輯 (v10.3.4用戶數據修正版)")
+                st.write("🏷️ 開始YOKOGAWA欄位重命名邏輯 (v10.3.5簡潔界面版)")
                 st.write("=" * 50)
                 
                 try:
@@ -1769,8 +1769,8 @@ class YokogawaRenderer:
         """渲染完整UI"""
         st.markdown("""
         <div class="success-box">
-            <h4>📊 YOKOGAWA Log 成功解析！(v10.3.4 用戶數據修正版)</h4>
-            <p>已識別為溫度記錄儀數據，正確識別用戶標籤(CPU_Tc, U5, U19等)，Tag行優先+CH行備選</p>
+            <h4>📊 YOKOGAWA Log 成功解析！(v10.3.5 簡潔界面版)</h4>
+            <p>已識別為溫度記錄儀數據，正確識別用戶標籤，詳細日誌可摺疊查看，界面簡潔清爽</p>
         </div>
         """, unsafe_allow_html=True)
         
@@ -1871,18 +1871,18 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🆕 v10.3.4 Dynamic Keyword Search - User Data Fixed 更新內容：
-        - 🎯 **修正用戶標籤識別** - 正確識別 CPU_Tc, U5, U19, L8 等用戶自定義標籤
-        - 🔧 **改進標籤判斷邏輯** - 支援字母+數字組合(U5)、下劃線格式(CPU_Tc)
-        - 📊 **最佳Tag行選擇** - 選擇用戶標籤數量最多的行作為Tag行
-        - 🏷️ **完整標籤預覽** - 找到Tag行後顯示所有識別的用戶標籤
-        - 🔍 **針對實際數據優化** - 根據用戶真實文件結構調整搜索邏輯
+        ### 🆕 v10.3.5 Dynamic Keyword Search - Clean UI 更新內容：
+        - 🎨 **簡潔界面設計** - 詳細解析日誌隱藏在下拉選單中，界面更清爽
+        - 📊 **重要信息突出** - 主要結果清晰顯示，詳細過程可選擇查看
+        - 🔍 **摺疊式調試區** - 文件分析、Tag搜索、重命名計劃都可摺疊
+        - 📈 **統計信息視覺化** - 使用卡片式指標顯示重命名統計
+        - 🎯 **保持完整功能** - 所有調試信息依然完整，只是界面更整潔
+        - 🏷️ **用戶標籤識別** - 繼續正確識別 CPU_Tc, U5, U19 等用戶標籤
         - 🛡️ **關鍵欄位保護** - Date、Time等重要欄位永不被重命名
-        - 📋 **詳細內容確認** - 顯示CH行和Tag行的實際內容進行驗證
         
         ### 🔄 解析策略對比：
         - **v10.2**: 固定行號 [29, 28, 30, 27] → 需要完整檔案
-        - **v10.3.4**: 用戶數據修正版 → 正確識別實際用戶標籤（CPU_Tc, U5等）
+        - **v10.3.5**: 簡潔界面版 → 保持全功能，詳細日誌摺疊隱藏，界面更清爽
         
         ### 🏗️ 技術特點：
         - **三階段搜索**: 關鍵字 → 結構 → 預設值
@@ -1895,7 +1895,7 @@ def display_version_info():
         """)
 
 def main():
-    """主程式 - v10.3.4 Dynamic Keyword Search - User Data Fixed"""
+    """主程式 - v10.3.5 Dynamic Keyword Search - Clean UI"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1972,7 +1972,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.4 支援 YOKOGAWA 完整/部分檔案、PTAT CSV、GPUMon CSV"
+        help="v10.3.5 支援 YOKOGAWA 完整/部分檔案、PTAT CSV、GPUMon CSV"
     )
     
     # 顯示訪問計數器
@@ -1989,7 +1989,7 @@ def main():
         st.sidebar.markdown("---")
         
         # 解析檔案
-        st.markdown("### 🔍 v10.3.4 用戶數據修正解析資訊")
+        st.markdown("### 🔍 v10.3.5 簡潔解析界面")
         
         log_data_list = []
         for uploaded_file in uploaded_files:
@@ -2122,16 +2122,16 @@ def main():
         💡 仍可進行數據分析
         ```
         
-        ### 🔧 v10.3.4 技術特點
+        ### 🔧 v10.3.5 技術特點
         
+        - **簡潔界面設計** - 使用Streamlit expander將詳細日誌摺疊，主界面更清爽
+        - **視覺化統計信息** - 使用st.metric卡片式顯示重命名統計，一目了然
         - **用戶數據專用優化** - 針對實際用戶文件結構(CPU_Tc, U5, U19等)優化識別邏輯
         - **智能標籤識別算法** - 支援多種用戶標籤格式：字母+數字、下劃線、短編號
         - **最佳行選擇策略** - 自動選擇標籤數量最多的行，確保找到真正的Tag行
-        - **完整內容驗證** - 識別後顯示實際標籤內容進行確認
+        - **完整調試功能** - 所有調試信息依然完整，只是界面組織更好
         - **用戶需求導向** - 完全按照「Tag優先，CH備選」的命名邏輯設計
         - **關鍵欄位保護** - Date、Time等欄位永不被重命名
-        - **詳細調試信息** - 完整追蹤每個搜索和判斷步驟
-        - **容錯降級機制** - 多重條件確保找到合適的標籤行
         """)
 
 if __name__ == "__main__":
