@@ -1,5 +1,5 @@
-# thermal_analysis_platform_v10.3.8_optimized.py
-# 溫度數據視覺化平台 - v10.3.8 多檔案獨立分析 + Summary整合版 (優化版)
+# thermal_analysis_platform_v10.3.8_optimized_fixed.py
+# 溫度數據視覺化平台 - v10.3.8 多檔案獨立分析 + Summary整合版 (優化版 + 修復一鍵複製)
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3.8 Multi-File Analysis with Summary (Optimized)"
+VERSION = "v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy)"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -1873,7 +1873,7 @@ class YokogawaRenderer:
             st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
 class SummaryRenderer:
-    """Summary UI渲染器 - v10.3.8優化版"""
+    """Summary UI渲染器 - v10.3.8優化版 (修復一鍵複製功能)"""
     
     def __init__(self, log_data_list: List[LogData]):
         self.log_data_list = log_data_list
@@ -1925,7 +1925,7 @@ class SummaryRenderer:
         display_df = self.summary_gen.format_summary_table_for_display(summary_df)
         
         if not display_df.empty:
-            # 添加一鍵複製功能
+            # 修復的複製功能區域
             col1, col2 = st.columns([3, 1])
             
             with col1:
@@ -1935,29 +1935,53 @@ class SummaryRenderer:
                 # 準備複製用的文本格式
                 copy_text = self._prepare_copy_text(display_df)
                 
-                # 使用JavaScript的一鍵複製按鈕
-                st.markdown(f"""
-                <div style="text-align: right;">
-                    <button onclick="navigator.clipboard.writeText(`{copy_text.replace('`', '\\`').replace('\\', '\\\\')}`).then(function() {{
-                        alert('表格已複製到剪貼簿！可直接貼到Word中。');
-                    }}).catch(function() {{
-                        alert('複製失敗，請使用下方的文本框手動複製。');
-                    }});" 
-                            style="background-color: #4CAF50; color: white; padding: 8px 16px; 
-                                   border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
-                        📋 一鍵複製表格
-                    </button>
-                </div>
-                """, unsafe_allow_html=True)
+                # 使用Streamlit的text_area作為主要複製方案
+                st.markdown("**📋 複製表格數據**")
                 
-                # 備用方案：顯示可複製的文本
-                with st.expander("📄 複製用文本格式", expanded=False):
-                    st.text_area(
-                        "表格文本（可直接複製到Word）",
-                        value=copy_text,
-                        height=200,
-                        help="選擇全部文本並複製，然後貼到Word文檔中"
-                    )
+                # 創建一個可選中和複製的文本區域
+                st.text_area(
+                    label="點擊下方文本框，Ctrl+A全選，Ctrl+C複製",
+                    value=copy_text,
+                    height=120,
+                    help="選擇全部文本並複製，然後在Word中貼上（會自動對齊為表格）",
+                    key="copy_text_area"
+                )
+                
+                # 提供下載功能作為備用方案
+                st.download_button(
+                    label="💾 下載表格文本文件",
+                    data=copy_text,
+                    file_name=f"temperature_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                    mime="text/plain",
+                    help="下載為文本文件，可在Word中打開並貼上"
+                )
+            
+            # 新增操作說明
+            with st.expander("📖 如何複製到Word", expanded=False):
+                st.markdown("""
+                ### 📋 複製到Word的三種方法：
+                
+                **方法1：直接複製（推薦）**
+                1. 點擊上方的文本框
+                2. 按 `Ctrl + A` 全選文本
+                3. 按 `Ctrl + C` 複製
+                4. 在Word中按 `Ctrl + V` 貼上
+                5. Word會自動識別Tab分隔並對齊為表格
+                
+                **方法2：下載文件**
+                1. 點擊"💾 下載表格文本文件"按鈕
+                2. 用記事本或Word打開下載的文件
+                3. 全選並複製內容到Word
+                
+                **方法3：手動輸入**
+                1. 參考下方顯示的表格
+                2. 在Word中手動創建表格並輸入數據
+                
+                ### 💡 Word表格格式化技巧：
+                - 貼上後，選中表格 → 右鍵 → "表格屬性" → 調整對齊方式
+                - 可以添加邊框：選中表格 → "設計"標籤 → 選擇表格樣式
+                - 調整列寬：將鼠標懸停在列邊界上拖拽調整
+                """)
             
             # 自定義樣式
             st.markdown("""
@@ -2018,7 +2042,7 @@ class SummaryRenderer:
                 **注意事項：**
                 - PTAT log 已優化為僅顯示 MSR Package Temperature
                 - Spec location、spec、Ref Tc spec 欄位留空供用戶填寫
-                - 可使用一鍵複製功能將表格貼到Word文檔
+                - 複製的文本使用Tab分隔，在Word中會自動對齊為表格
                 """)
             
             # 提供下載功能
@@ -2030,13 +2054,35 @@ class SummaryRenderer:
             # 轉換為CSV
             csv_data = export_df.to_csv(index=False, encoding='utf-8-sig')
             
-            st.download_button(
-                label="📥 下載完整摘要表格 (CSV)",
-                data=csv_data,
-                file_name=f"temperature_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv",
-                help="下載包含來源檔案信息的完整摘要表格"
-            )
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.download_button(
+                    label="📥 下載完整摘要表格 (CSV)",
+                    data=csv_data,
+                    file_name=f"temperature_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    help="下載包含來源檔案信息的完整摘要表格"
+                )
+            
+            with col2:
+                # 準備Excel格式的數據
+                excel_buffer = io.BytesIO()
+                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                    # 寫入顯示用的表格
+                    display_df.to_excel(writer, sheet_name='溫度摘要', index=False)
+                    # 寫入完整數據
+                    export_df.to_excel(writer, sheet_name='完整數據', index=False)
+                
+                excel_data = excel_buffer.getvalue()
+                
+                st.download_button(
+                    label="📊 下載Excel格式 (推薦)",
+                    data=excel_data,
+                    file_name=f"temperature_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    help="Excel格式，包含格式化的表格，可直接在Word中使用"
+                )
             
             # 顯示溫度分布圖
             self._render_temperature_distribution_chart(summary_df)
@@ -2049,7 +2095,7 @@ class SummaryRenderer:
         if display_df.empty:
             return ""
         
-        # 創建表格文本
+        # 創建表格文本，使用Tab分隔符
         lines = []
         
         # 標題行
@@ -2152,7 +2198,7 @@ class RendererFactory:
             return None
 
 # =============================================================================
-# 9. 主應用程式 (Main Application) - v10.3.8 多檔案獨立分析 + Summary整合版 (優化版)
+# 9. 主應用程式 (Main Application) - v10.3.8 多檔案獨立分析 + Summary整合版 (優化版 + 修復一鍵複製)
 # =============================================================================
 
 def display_version_info():
@@ -2161,38 +2207,57 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🎨 v10.3.8 Multi-File Analysis with Summary (Optimized) 更新內容：
-        - 📋 **優化Summary界面** - 移除不必要的統計指標顯示
+        ### 🎨 v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy) 更新內容：
+        - 📋 **修復一鍵複製功能** - 移除不可靠的JavaScript複製按鈕
+        - 📝 **優化複製體驗** - 使用Streamlit原生text_area，可靠且易用
+        - 💾 **增加Excel下載** - 提供Excel格式下載，更方便Word導入
+        - 📖 **詳細操作指導** - 提供三種複製方法，確保用戶能成功複製
         - 🖥️ **PTAT log優化** - 僅顯示MSR Package Temperature
         - 📝 **Spec欄位留空** - Spec location、spec、Ref Tc spec三欄位留空供用戶填寫
-        - 📋 **一鍵複製功能** - 表格右上角添加一鍵複製按鈕，可直接貼到Word
-        - 🎯 **Tab分隔格式** - 複製的文本使用Tab分隔，適合Word表格
-        - 📊 **保留核心功能** - 溫度分布圖、CSV導出、檔案來源詳情等功能完整保留
         
-        ### 🔄 Summary界面優化：
-        - **移除指標卡片** - 不再顯示總監控點、最高溫度、分析檔案、平均溫度
-        - **精簡PTAT數據** - 只保留MSR Package Temperature溫度數據
-        - **用戶自定義Spec** - 所有規格相關欄位留空供用戶填寫
-        - **一鍵複製到Word** - 右上角複製按鈕，支援Tab分隔格式
-        - **界面更簡潔** - 專注於核心表格，移除冗餘信息
+        ### 🔧 修復的複製功能：
+        - **移除JavaScript複製** - 不再依賴不可靠的clipboard API
+        - **text_area複製方案** - 用戶可直接選擇文本並複製
+        - **三種複製方法** - 直接複製、下載文本文件、Excel下載
+        - **詳細操作說明** - 包含Word表格格式化技巧
+        - **Tab分隔格式** - 在Word中會自動對齊為表格
         
-        ### 💡 使用說明：
-        - **一鍵複製**：點擊表格右上角的"📋 一鍵複製表格"按鈕
-        - **Word貼上**：在Word中創建表格，然後直接Ctrl+V貼上
-        - **手動複製**：如果一鍵複製失敗，可使用下方的文本框手動複製
-        - **規格填寫**：Spec location、spec、Ref Tc spec欄位請根據實際需求填寫
+        ### 📋 新的複製使用方法：
         
-        ### 🎯 PTAT數據優化：
-        - **僅MSR Package Temperature** - 過濾掉其他CPU溫度數據
-        - **避免數據冗餘** - 專注於最重要的Package級別溫度
-        - **保持表格簡潔** - 減少不必要的監控點
+        **方法1：直接複製（推薦）**
+        1. 點擊Summary標籤頁右側的文本框
+        2. 按 `Ctrl + A` 全選文本
+        3. 按 `Ctrl + C` 複製
+        4. 在Word中按 `Ctrl + V` 貼上
+        5. Word會自動識別Tab分隔並對齊為表格
+        
+        **方法2：Excel下載（最方便）**
+        1. 點擊"📊 下載Excel格式"按鈕
+        2. 在Excel中打開下載的文件
+        3. 複製表格貼到Word中
+        
+        **方法3：文本文件下載（備用）**
+        1. 點擊"💾 下載表格文本文件"
+        2. 用記事本打開並複製內容
+        
+        ### 💡 Word表格格式化技巧：
+        - 貼上後，選中表格 → 右鍵 → "表格屬性" → 調整對齊方式
+        - 可以添加邊框：選中表格 → "設計"標籤 → 選擇表格樣式
+        - 調整列寬：將鼠標懸停在列邊界上拖拽調整
+        
+        ### 🎯 Summary界面保持優化：
+        - **專注核心表格** - 移除不必要的統計指標顯示
+        - **PTAT數據精簡** - 只保留MSR Package Temperature
+        - **用戶自定義Spec** - 所有規格相關欄位留空供填寫
+        - **保留分析圖表** - 溫度分布直方圖和各通道溫度圖表
+        - **檔案來源追蹤** - 每個溫度數據都標記來源檔案和類型
         
         ---
-        💡 **v10.3.8 優化版核心優勢：** 更簡潔的Summary界面 + 一鍵複製到Word功能！
+        💡 **v10.3.8 修復版核心優勢：** 可靠的複製功能 + 多種備用方案 + 優化的Summary界面！
         """)
 
 def main():
-    """主程式 - v10.3.8 Multi-File Analysis with Summary (Optimized)"""
+    """主程式 - v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy)"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -2259,7 +2324,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>📊 溫度數據視覺化平台</h1>
-        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合 (優化版)</p>
+        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合 (修復複製功能)</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -2280,7 +2345,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.8 優化版：多檔案獨立分析 + Summary整合，支援一鍵複製到Word"
+        help="v10.3.8 修復版：多檔案獨立分析 + Summary整合，修復複製功能"
     )
     
     # 顯示訪問計數器
@@ -2425,34 +2490,51 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據（完整/部分檔案）
         
-        ### ✨ v10.3.8 Multi-File Analysis with Summary (Optimized) 特色
+        ### ✨ v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy) 特色
         
-        - 📋 **優化Summary界面** - 移除不必要的統計指標，專注於核心表格
+        - 📋 **修復複製功能** - 移除不可靠的JavaScript，使用穩定的text_area方案
+        - 💾 **增加Excel下載** - 提供Excel格式下載，更方便Word導入
+        - 📖 **詳細操作指導** - 三種複製方法，確保用戶能成功複製到Word
         - 🖥️ **PTAT數據精簡** - 僅顯示MSR Package Temperature，避免數據冗餘
         - 📝 **用戶自定義Spec** - Spec location、spec、Ref Tc spec欄位留空供填寫
-        - 📋 **一鍵複製到Word** - 表格右上角複製按鈕，支援Tab分隔格式
         - 🎯 **多檔案獨立分析** - 每個log檔案都有專屬的分析結果和控制面板
         - 📑 **智能標籤分組** - 使用標籤頁將不同檔案清晰分離
         - 🔧 **檔案類型識別** - 自動識別並標記GPUMon、PTAT、YOKOGAWA檔案
-        - 📊 **完整功能保留** - 每種檔案類型都享有完整的專業分析功能
-        - 💾 **數據導出** - Summary標籤支援CSV格式導出
         
-        ### 🎯 Summary標籤頁優化功能
+        ### 🔧 修復的複製功能特點
         
-        - **🎯 專注核心表格** - 移除統計指標卡片，直接顯示溫度表格
-        - **📋 一鍵複製到Word** - 右上角複製按鈕，Tab分隔格式適合Word表格
-        - **🖥️ PTAT數據精簡** - 只保留MSR Package Temperature，過濾其他CPU溫度
-        - **📝 Spec欄位留空** - Spec location、spec、Ref Tc spec供用戶自定義
-        - **📈 保留分析圖表** - 溫度分布直方圖和各通道溫度圖表
-        - **📂 檔案來源追蹤** - 每個溫度數據都標記來源檔案和類型
-        - **💾 CSV導出功能** - 支援完整摘要表格下載
+        - **🚫 移除JavaScript複製** - 不再依賴不可靠的clipboard API
+        - **📝 text_area複製方案** - 用戶可直接選擇文本並複製
+        - **💾 三種複製方法** - 直接複製、下載文本文件、Excel下載
+        - **📖 詳細操作說明** - 包含Word表格格式化技巧
+        - **📋 Tab分隔格式** - 在Word中會自動對齊為表格
         
-        ### 📋 一鍵複製使用方法
+        ### 📋 Summary標籤頁複製使用方法
         
-        1. **點擊複製按鈕** - 在Summary標籤頁表格右上角點擊"📋 一鍵複製表格"
-        2. **打開Word文檔** - 在Word中插入表格或直接在空白處貼上
-        3. **Ctrl+V貼上** - 表格會以Tab分隔格式自動對齊到Word表格中
-        4. **手動複製備用** - 如果一鍵複製失敗，可使用下方文本框手動複製
+        **方法1：直接複製（推薦）**
+        1. 進入Summary標籤頁
+        2. 點擊表格右側的文本框
+        3. 按 `Ctrl + A` 全選文本
+        4. 按 `Ctrl + C` 複製
+        5. 在Word中按 `Ctrl + V` 貼上
+        6. Word會自動識別Tab分隔並對齊為表格
+        
+        **方法2：Excel下載（最方便）**
+        1. 點擊"📊 下載Excel格式"按鈕
+        2. 在Excel中打開下載的文件
+        3. 複製表格貼到Word中
+        
+        **方法3：文本文件下載（備用）**
+        1. 點擊"💾 下載表格文本文件"
+        2. 用記事本或Word打開下載的文件
+        3. 全選並複製內容到Word
+        
+        ### 💡 Word表格格式化技巧
+        
+        - **調整對齊** - 貼上後，選中表格 → 右鍵 → "表格屬性" → 調整對齊方式
+        - **添加邊框** - 選中表格 → "設計"標籤 → 選擇表格樣式
+        - **調整列寬** - 將鼠標懸停在列邊界上拖拽調整
+        - **格式化數字** - 選中溫度列 → 右鍵 → "表格屬性" → 設定小數位數
         
         ### 🔍 動態關鍵字搜索技術
         
@@ -2462,47 +2544,8 @@ def main():
         - **🌐 多語言關鍵詞** - 支援中英文時間相關關鍵詞
         - **🛡️ 關鍵欄位保護** - Date、Time等重要欄位永不被重命名
         
-        ### 💡 使用建議
-        
-        #### 📁 **YOKOGAWA 檔案最佳實踐**
-        
-        **🥇 推薦：完整檔案**
-        ```
-        ✅ 包含完整的檔案結構
-        ✅ 自動識別CH和Tag行
-        ✅ 智能欄位重命名
-        ✅ 最佳解析效果
-        ```
-        
-        **🥈 可用：部分檔案**
-        ```
-        ✅ 僅包含數據和時間欄位
-        ✅ 基本圖表功能正常
-        ⚠️ 無法進行欄位重命名
-        💡 仍可進行數據分析
-        ```
-        
-        #### 📋 **Summary標籤頁使用技巧**
-        
-        **🎯 最佳效果：多檔案上傳**
-        ```
-        ✅ 同時上傳YOKOGAWA、PTAT、GPUMon檔案
-        ✅ Summary自動整合所有溫度數據
-        ✅ 按標準格式顯示整合表格
-        ✅ 一鍵複製到Word，支援規格填寫
-        ```
-        
-        ### 🎨 界面設計理念
-        
-        - **極簡主義** - 去除一切不必要的視覺元素
-        - **整合視角** - Summary提供跨檔案的統一視角
-        - **標準化輸出** - 按照業界標準格式顯示結果
-        - **用戶友好** - 簡潔界面配合強大的一鍵複製功能
-        - **信息分層** - 重要信息突出，詳細信息隱藏但可訪問
-        - **工作流優化** - 從解析到Word報告的完整工作流
-        
         ---
-        💡 **v10.3.8 優化版核心優勢：** 多檔案獨立分析 + 簡潔Summary界面 + 一鍵複製到Word = 最高效的溫度數據分析工作流！
+        💡 **v10.3.8 修復版核心優勢：** 可靠的複製功能 + 多種備用方案 + 優化的Summary界面 = 最穩定的溫度數據分析工作流！
         """)
 
 if __name__ == "__main__":
