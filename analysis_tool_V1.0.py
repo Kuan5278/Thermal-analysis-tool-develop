@@ -1991,43 +1991,6 @@ class SummaryRenderer:
                 st.markdown(html_table, unsafe_allow_html=True)
                 st.info("💡 提示：在上方表格上按住滑鼠左鍵拖拽選中整個表格，然後Ctrl+C複製，到Word中Ctrl+V貼上")
             
-            # 自定義樣式
-            st.markdown("""
-            <style>
-            .temp-summary-table {
-                font-size: 0.9em;
-            }
-            .temp-summary-table th {
-                background-color: #f0f2f6;
-                font-weight: bold;
-                text-align: center;
-            }
-            .temp-summary-table td {
-                text-align: center;
-            }
-            </style>
-            """, unsafe_allow_html=True)
-            
-            # 顯示表格
-            st.dataframe(
-                display_df,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Ch.": st.column_config.NumberColumn("Ch.", width="small"),
-                    "Location": st.column_config.TextColumn("Location", width="medium"),
-                    "Description": st.column_config.TextColumn("Description", width="medium"),
-                    "Spec location": st.column_config.TextColumn("Spec location", width="small"),
-                    "spec": st.column_config.TextColumn("spec", width="small"),
-                    "Ref Tc spec": st.column_config.TextColumn("Ref Tc spec", width="small"),
-                    "Result (Case Temp)": st.column_config.NumberColumn(
-                        "Result (Case Temp)",
-                        width="medium",
-                        format="%.1f°C"
-                    )
-                }
-            )
-            
             # 添加說明
             with st.expander("📖 表格說明", expanded=False):
                 st.markdown("""
