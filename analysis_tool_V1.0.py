@@ -1873,14 +1873,14 @@ class YokogawaRenderer:
             st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
 class SummaryRenderer:
-    """Summary UI渲染器 - v10.3.8優化版 (修復一鍵複製功能)"""
+    """Summary UI渲染器 - v10.3.8簡化版 (僅保留HTML帶表格框的數據呈現)"""
     
     def __init__(self, log_data_list: List[LogData]):
         self.log_data_list = log_data_list
         self.summary_gen = TemperatureSummaryGenerator()
     
     def render(self):
-        """渲染Summary標籤頁內容"""
+        """渲染Summary標籤頁內容 - 簡化版"""
         st.markdown("""
         <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 10px; margin-bottom: 2rem; color: white;">
             <h3>📋 溫度整合摘要報告</h3>
@@ -1925,76 +1925,46 @@ class SummaryRenderer:
         display_df = self.summary_gen.format_summary_table_for_display(summary_df)
         
         if not display_df.empty:
-            # 修復的複製功能區域
+            # HTML帶表格框的複製功能區域
             col1, col2 = st.columns([3, 1])
             
             with col1:
                 st.markdown("**表格數據：**")
             
             with col2:
-                # 準備複製用的文本格式
-                copy_text = self._prepare_copy_text(display_df)
+                # 準備HTML表格複製
+                html_table = self._prepare_html_table(display_df)
                 
-                # 使用Streamlit的text_area作為主要複製方案
-                st.markdown("**📋 複製表格數據**")
+                st.markdown("**📋 複製帶邊框表格**")
                 
-                # 添加複製格式選擇
-                copy_format = st.radio(
-                    "選擇複製格式：",
-                    ["HTML表格（含邊框）", "Tab分隔文本"],
-                    index=0,
-                    help="HTML格式複製到Word會保留邊框，Tab分隔格式更簡潔"
+                # 只保留HTML表格格式
+                st.text_area(
+                    label="HTML表格格式（複製到Word會保留邊框）",
+                    value=html_table,
+                    height=150,
+                    help="選擇全部HTML代碼並複製，在Word中貼上會保留完整表格格式和邊框",
+                    key="copy_html_area"
                 )
                 
-                if copy_format == "HTML表格（含邊框）":
-                    # HTML表格格式
-                    html_table = self._prepare_html_table(display_df)
-                    st.text_area(
-                        label="HTML表格格式（複製到Word會保留邊框）",
-                        value=html_table,
-                        height=150,
-                        help="選擇全部HTML代碼並複製，在Word中貼上會保留完整表格格式和邊框",
-                        key="copy_html_area"
-                    )
-                    
-                    # 提供HTML文件下載
-                    st.download_button(
-                        label="💾 下載HTML表格文件",
-                        data=html_table,
-                        file_name=f"temperature_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
-                        mime="text/html",
-                        help="下載為HTML文件，用瀏覽器打開後複製表格到Word"
-                    )
-                else:
-                    # Tab分隔文本格式
-                    st.text_area(
-                        label="Tab分隔文本格式",
-                        value=copy_text,
-                        height=120,
-                        help="選擇全部文本並複製，在Word中貼上會自動對齊為表格",
-                        key="copy_text_area"
-                    )
-                    
-                    # 提供文本文件下載
-                    st.download_button(
-                        label="💾 下載表格文本文件",
-                        data=copy_text,
-                        file_name=f"temperature_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                        mime="text/plain",
-                        help="下載為文本文件，可在Word中打開並貼上"
-                    )
+                # 提供HTML文件下載
+                st.download_button(
+                    label="💾 下載HTML表格文件",
+                    data=html_table,
+                    file_name=f"temperature_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                    mime="text/html",
+                    help="下載為HTML文件，用瀏覽器打開後複製表格到Word"
+                )
             
-            # 新增操作說明
+            # 操作說明
             with st.expander("📖 如何複製到Word", expanded=False):
                 st.markdown("""
-                ### 📋 複製到Word的方法：
+                ### 📋 複製帶邊框表格到Word的方法：
                 
                 **方法1：HTML表格複製（推薦 - 含邊框）**
-                1. 選擇"HTML表格（含邊框）"格式
-                2. 點擊HTML文本框，按 `Ctrl + A` 全選HTML代碼
-                3. 按 `Ctrl + C` 複製
-                4. 在Word中按 `Ctrl + V` 貼上
-                5. Word會自動生成完整的表格，包含邊框和格式
+                1. 點擊HTML文本框，按 `Ctrl + A` 全選HTML代碼
+                2. 按 `Ctrl + C` 複製
+                3. 在Word中按 `Ctrl + V` 貼上
+                4. Word會自動生成完整的表格，包含邊框和格式
                 
                 **方法2：瀏覽器表格複製（最簡單 - 含邊框）**
                 1. 點擊"💾 下載HTML表格文件"按鈕
@@ -2002,12 +1972,7 @@ class SummaryRenderer:
                 3. 在瀏覽器中選中整個表格並複製
                 4. 在Word中貼上，保留完整格式
                 
-                **方法3：Tab分隔文本（簡潔）**
-                1. 選擇"Tab分隔文本"格式
-                2. 複製文本並在Word中貼上
-                3. 手動添加表格邊框：選中表格 → "設計"標籤 → 選擇邊框樣式
-                
-                **方法4：Excel下載（最方便 - 含邊框）**
+                **方法3：Excel下載（最方便 - 含邊框）**
                 1. 點擊下方"📊 下載Excel格式（含邊框）"按鈕
                 2. 在Excel中打開文件（已包含邊框格式）
                 3. 複製表格貼到Word中
@@ -2023,7 +1988,6 @@ class SummaryRenderer:
             # 在表格下方添加HTML預覽
             with st.expander("🔍 HTML表格預覽（可直接複製）", expanded=False):
                 st.markdown("**以下是帶邊框的HTML表格，可直接選中複製：**")
-                html_table = self._prepare_html_table(display_df)
                 st.markdown(html_table, unsafe_allow_html=True)
                 st.info("💡 提示：在上方表格上按住滑鼠左鍵拖拽選中整個表格，然後Ctrl+C複製，到Word中Ctrl+V貼上")
             
@@ -2086,7 +2050,6 @@ class SummaryRenderer:
                 **注意事項：**
                 - PTAT log 已優化為僅顯示 MSR Package Temperature
                 - Spec location、spec、Ref Tc spec 欄位留空供用戶填寫
-                - 複製的文本使用Tab分隔，在Word中會自動對齊為表格
                 """)
             
             # 提供下載功能
@@ -2161,32 +2124,9 @@ class SummaryRenderer:
                     )
                 except Exception as e:
                     st.error(f"Excel生成失敗: {e}")
-            
-            # 顯示溫度分布圖
-            self._render_temperature_distribution_chart(summary_df)
         
         else:
             st.error("❌ 無法生成摘要表格")
-    
-    def _prepare_copy_text(self, display_df: pd.DataFrame) -> str:
-        """準備適合複製到Word的文本格式"""
-        if display_df.empty:
-            return ""
-        
-        # 創建表格文本，使用Tab分隔符
-        lines = []
-        
-        # 標題行
-        headers = display_df.columns.tolist()
-        header_line = "\t".join(headers)
-        lines.append(header_line)
-        
-        # 數據行
-        for _, row in display_df.iterrows():
-            data_line = "\t".join(str(value) if pd.notna(value) else "" for value in row)
-            lines.append(data_line)
-        
-        return "\n".join(lines)
     
     def _prepare_html_table(self, display_df: pd.DataFrame) -> str:
         """準備帶邊框的HTML表格格式"""
@@ -2252,72 +2192,6 @@ class SummaryRenderer:
         html_parts.append('</table>')
         
         return "\n".join(html_parts)
-    
-    def _render_temperature_distribution_chart(self, summary_df: pd.DataFrame):
-        """渲染溫度分布圖表"""
-        try:
-            if summary_df.empty or 'Result (Case Temp)' not in summary_df.columns:
-                return
-            
-            st.markdown("### 📊 溫度分布圖表")
-            
-            # 轉換溫度數據
-            temps = pd.to_numeric(summary_df['Result (Case Temp)'], errors='coerce').dropna()
-            
-            if len(temps) == 0:
-                st.warning("⚠️ 沒有有效的溫度數據用於繪圖")
-                return
-            
-            fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
-            
-            # 溫度直方圖
-            ax1.hist(temps, bins=min(10, len(temps)), alpha=0.7, color='skyblue', edgecolor='black')
-            ax1.set_title('溫度分布直方圖', fontsize=12, fontweight='bold')
-            ax1.set_xlabel('溫度 (°C)', fontsize=10)
-            ax1.set_ylabel('頻次', fontsize=10)
-            ax1.grid(True, alpha=0.3)
-            
-            # 溫度按通道圖
-            x_pos = range(len(temps))
-            bars = ax2.bar(x_pos, temps, alpha=0.7, color='lightcoral', edgecolor='black')
-            ax2.set_title('各通道溫度分布', fontsize=12, fontweight='bold')
-            ax2.set_xlabel('通道編號', fontsize=10)
-            ax2.set_ylabel('溫度 (°C)', fontsize=10)
-            ax2.grid(True, alpha=0.3)
-            
-            # 標註最高溫度
-            max_temp_idx = temps.idxmax()
-            max_temp_val = temps.max()
-            max_temp_pos = list(temps.index).index(max_temp_idx)
-            
-            ax2.annotate(f'最高: {max_temp_val:.1f}°C', 
-                        xy=(max_temp_pos, max_temp_val),
-                        xytext=(max_temp_pos, max_temp_val + max_temp_val * 0.1),
-                        arrowprops=dict(arrowstyle='->', color='red', lw=1.5),
-                        fontsize=9, ha='center', color='red', fontweight='bold')
-            
-            # 設定x軸標籤
-            if len(x_pos) <= 20:
-                ax2.set_xticks(x_pos[::max(1, len(x_pos)//10)])
-                ax2.set_xticklabels([str(i+1) for i in x_pos[::max(1, len(x_pos)//10)]])
-            else:
-                ax2.set_xticks(x_pos[::len(x_pos)//10])
-                ax2.set_xticklabels([str(i+1) for i in x_pos[::len(x_pos)//10]])
-            
-            plt.tight_layout()
-            st.pyplot(fig)
-            
-            # 顯示統計信息
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("🌡️ 最高溫度", f"{temps.max():.1f}°C")
-            with col2:
-                st.metric("🧊 最低溫度", f"{temps.min():.1f}°C")
-            with col3:
-                st.metric("📊 溫度範圍", f"{temps.max() - temps.min():.1f}°C")
-            
-        except Exception as e:
-            st.error(f"❌ 圖表生成失敗: {e}")
 
 # =============================================================================
 # 8. UI工廠 (UI Factory)
@@ -2341,7 +2215,7 @@ class RendererFactory:
             return None
 
 # =============================================================================
-# 9. 主應用程式 (Main Application) - v10.3.8 多檔案獨立分析 + Summary整合版 (優化版 + 修復一鍵複製)
+# 9. 主應用程式 (Main Application) - v10.3.8 多檔案獨立分析 + Summary整合版 (簡化版)
 # =============================================================================
 
 def display_version_info():
@@ -2350,29 +2224,26 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🎨 v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy with Borders) 更新內容：
-        - 📋 **修復一鍵複製功能** - 移除不可靠的JavaScript複製按鈕
-        - 🖼️ **新增HTML表格複製** - 支援帶邊框的表格格式，複製到Word保留完整格式
-        - 📝 **雙格式選擇** - HTML表格（含邊框）和Tab分隔文本兩種格式
-        - 🔍 **HTML表格預覽** - 可直接從網頁選中表格複製到Word
-        - 💾 **增強Excel下載** - Excel文件包含完整邊框格式
-        - 📖 **詳細操作指導** - 四種複製方法，確保用戶能成功複製帶邊框的表格
+        ### 🎨 v10.3.8 Multi-File Analysis with Summary (Simplified) 更新內容：
+        - 📋 **簡化Summary界面** - 專注於HTML帶邊框表格功能
+        - ❌ **移除功能** - 刪除Tab分隔文本、溫度分布圖、溫度統計方塊
+        - 🖼️ **保留HTML表格複製** - 支援帶邊框的表格格式，複製到Word保留完整格式
+        - 💾 **保留Excel下載** - Excel文件包含完整邊框格式
+        - 🎯 **界面簡潔化** - 專注核心功能，提升用戶體驗
         - 🖥️ **PTAT log優化** - 僅顯示MSR Package Temperature
         - 📝 **Spec欄位留空** - Spec location、spec、Ref Tc spec三欄位留空供用戶填寫
         
-        ### 🖼️ 新增的邊框表格功能：
+        ### 🖼️ 保留的邊框表格功能：
         - **HTML表格格式** - 包含完整CSS樣式和邊框定義
         - **瀏覽器預覽** - 在網頁中直接顯示帶邊框的表格供複製
         - **Excel邊框格式** - 下載的Excel文件包含完整邊框樣式
-        - **四種複製方法** - HTML複製、瀏覽器複製、文本複製、Excel複製
         - **自動格式化** - 表格包含斑馬紋和標題樣式
         
-        ### 📋 帶邊框的複製方法：
+        ### 📋 簡化後的複製方法：
         
         **方法1：HTML表格複製（推薦 - 含邊框）**
-        1. 選擇"HTML表格（含邊框）"格式
-        2. 複製HTML代碼到Word中
-        3. Word會自動生成完整的表格，包含邊框和格式
+        1. 複製HTML代碼到Word中
+        2. Word會自動生成完整的表格，包含邊框和格式
         
         **方法2：瀏覽器表格複製（最簡單 - 含邊框）**
         1. 展開"HTML表格預覽"區域
@@ -2384,28 +2255,19 @@ def display_version_info():
         2. 在Excel中打開文件（已包含邊框格式）
         3. 複製表格貼到Word中
         
-        **方法4：Tab分隔文本（需手動加邊框）**
-        1. 選擇"Tab分隔文本"格式
-        2. 複製到Word後手動添加邊框樣式
-        
-        ### 💡 Word表格格式化技巧：
-        - 貼上後，選中表格 → 右鍵 → "表格屬性" → 調整對齊方式
-        - 可以添加邊框：選中表格 → "設計"標籤 → 選擇表格樣式
-        - 調整列寬：將鼠標懸停在列邊界上拖拽調整
-        
-        ### 🎯 Summary界面保持優化：
-        - **專注核心表格** - 移除不必要的統計指標顯示
+        ### 🎯 Summary界面簡化重點：
+        - **專注核心表格** - 只保留最重要的HTML帶邊框表格功能
+        - **移除冗餘功能** - 刪除Tab分隔文本、溫度分布圖、統計方塊
         - **PTAT數據精簡** - 只保留MSR Package Temperature
         - **用戶自定義Spec** - 所有規格相關欄位留空供填寫
-        - **保留分析圖表** - 溫度分布直方圖和各通道溫度圖表
-        - **檔案來源追蹤** - 每個溫度數據都標記來源檔案和類型
+        - **保留檔案來源追蹤** - 每個溫度數據都標記來源檔案和類型
         
         ---
-        💡 **v10.3.8 修復版核心優勢：** 可靠的複製功能 + 多種備用方案 + 優化的Summary界面！
+        💡 **v10.3.8 簡化版核心優勢：** 簡潔界面 + 專注核心功能 + 高效的帶邊框表格複製！
         """)
 
 def main():
-    """主程式 - v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy)"""
+    """主程式 - v10.3.8 Multi-File Analysis with Summary (Simplified)"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -2472,7 +2334,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>📊 溫度數據視覺化平台</h1>
-        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合 (支援帶邊框表格複製)</p>
+        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合 (簡化版)</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -2493,7 +2355,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.8 修復版：多檔案獨立分析 + Summary整合，支援帶邊框表格複製"
+        help="v10.3.8 簡化版：多檔案獨立分析 + Summary整合，專注帶邊框表格複製"
     )
     
     # 顯示訪問計數器
@@ -2638,33 +2500,31 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據（完整/部分檔案）
         
-        ### ✨ v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy with Borders) 特色
+        ### ✨ v10.3.8 Multi-File Analysis with Summary (Simplified) 特色
         
-        - 📋 **修復複製功能** - 移除不可靠的JavaScript，使用穩定的text_area方案
-        - 🖼️ **新增HTML表格複製** - 支援帶邊框的表格格式，保留完整樣式
-        - 💾 **增強Excel下載** - Excel文件包含完整邊框格式
-        - 📖 **四種複製方法** - HTML複製、瀏覽器複製、文本複製、Excel複製
+        - 📋 **簡化Summary界面** - 專注於HTML帶邊框表格功能
+        - ❌ **移除冗餘功能** - 刪除Tab分隔文本、溫度分布圖、溫度統計方塊
+        - 🖼️ **保留HTML表格複製** - 支援帶邊框的表格格式，保留完整樣式
+        - 💾 **保留Excel下載** - Excel文件包含完整邊框格式
         - 🖥️ **PTAT數據精簡** - 僅顯示MSR Package Temperature，避免數據冗餘
         - 📝 **用戶自定義Spec** - Spec location、spec、Ref Tc spec欄位留空供填寫
         - 🎯 **多檔案獨立分析** - 每個log檔案都有專屬的分析結果和控制面板
         - 📑 **智能標籤分組** - 使用標籤頁將不同檔案清晰分離
         - 🔧 **檔案類型識別** - 自動識別並標記GPUMon、PTAT、YOKOGAWA檔案
         
-        ### 🖼️ 新增邊框表格複製功能
+        ### 🖼️ 簡化後的邊框表格複製功能
         
         - **🎨 HTML表格格式** - 包含完整CSS樣式和邊框定義
         - **🔍 瀏覽器預覽** - 在網頁中直接顯示帶邊框的表格供複製
         - **💾 Excel邊框格式** - 下載的Excel文件包含完整邊框樣式
-        - **📋 四種複製方法** - 確保用戶能成功複製帶邊框的表格
         - **🎨 自動格式化** - 表格包含斑馬紋、標題樣式和完整邊框
         
-        ### 📋 Summary標籤頁邊框表格複製方法
+        ### 📋 Summary標籤頁簡化後的複製方法
         
         **方法1：HTML表格複製（推薦 - 含邊框）**
         1. 進入Summary標籤頁
-        2. 選擇"HTML表格（含邊框）"格式
-        3. 複製HTML代碼，在Word中貼上
-        4. Word會自動生成完整的表格，包含邊框和格式
+        2. 複製HTML代碼，在Word中貼上
+        3. Word會自動生成完整的表格，包含邊框和格式
         
         **方法2：瀏覽器表格複製（最簡單 - 含邊框）**
         1. 展開"HTML表格預覽"區域
@@ -2677,12 +2537,7 @@ def main():
         2. 在Excel中打開下載的文件（已包含邊框格式）
         3. 複製表格貼到Word中，保留所有格式
         
-        **方法4：Tab分隔文本（需手動加邊框）**
-        1. 選擇"Tab分隔文本"格式
-        2. 複製到Word後會自動對齊為表格
-        3. 手動添加邊框：選中表格 → "設計"標籤 → 選擇邊框樣式
-        
-        ### 💡 Word表格格式化進階技巧
+        ### 💡 Word表格格式化技巧
         
         - **自動邊框** - HTML和Excel複製會自動包含邊框
         - **調整邊框樣式** - 選中表格 → "設計"標籤 → "邊框" → 選擇不同樣式
@@ -2692,16 +2547,8 @@ def main():
         - **添加標題樣式** - 選中標題列 → "常用"標籤 → 設定粗體、底色等
         - **表格樣式** - 選中表格 → "設計"標籤 → 選擇預設表格樣式
         
-        ### 🔍 動態關鍵字搜索技術
-        
-        - **🔍 三階段搜索** - 關鍵字 → 結構 → 預設值逐層搜索
-        - **🏷️ 智能標籤識別** - 自動識別用戶標籤（CPU_Tc, U5, U19等）
-        - **📊 完整/部分檔案支援** - 完整檔案享受智能重命名，部分檔案亦可解析
-        - **🌐 多語言關鍵詞** - 支援中英文時間相關關鍵詞
-        - **🛡️ 關鍵欄位保護** - Date、Time等重要欄位永不被重命名
-        
         ---
-        💡 **v10.3.8 修復版核心優勢：** 可靠的複製功能 + 多種備用方案 + 優化的Summary界面 = 最穩定的溫度數據分析工作流！
+        💡 **v10.3.8 簡化版核心優勢：** 簡潔界面 + 專注核心功能 + 高效的帶邊框表格複製工作流！
         """)
 
 if __name__ == "__main__":
