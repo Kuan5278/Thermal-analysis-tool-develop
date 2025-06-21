@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy)"
+VERSION = "v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy with Borders)"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -1934,7 +1934,6 @@ class SummaryRenderer:
             with col2:
                 # 準備複製用的文本格式
                 copy_text = self._prepare_copy_text(display_df)
-                html_table = self._prepare_html_table(display_df)
                 
                 # 使用Streamlit的text_area作為主要複製方案
                 st.markdown("**📋 複製表格數據**")
@@ -1949,6 +1948,7 @@ class SummaryRenderer:
                 
                 if copy_format == "HTML表格（含邊框）":
                     # HTML表格格式
+                    html_table = self._prepare_html_table(display_df)
                     st.text_area(
                         label="HTML表格格式（複製到Word會保留邊框）",
                         value=html_table,
@@ -1987,29 +1987,45 @@ class SummaryRenderer:
             # 新增操作說明
             with st.expander("📖 如何複製到Word", expanded=False):
                 st.markdown("""
-                ### 📋 複製到Word的三種方法：
+                ### 📋 複製到Word的方法：
                 
-                **方法1：直接複製（推薦）**
-                1. 點擊上方的文本框
-                2. 按 `Ctrl + A` 全選文本
+                **方法1：HTML表格複製（推薦 - 含邊框）**
+                1. 選擇"HTML表格（含邊框）"格式
+                2. 點擊HTML文本框，按 `Ctrl + A` 全選HTML代碼
                 3. 按 `Ctrl + C` 複製
                 4. 在Word中按 `Ctrl + V` 貼上
-                5. Word會自動識別Tab分隔並對齊為表格
+                5. Word會自動生成完整的表格，包含邊框和格式
                 
-                **方法2：下載文件**
-                1. 點擊"💾 下載表格文本文件"按鈕
-                2. 用記事本或Word打開下載的文件
-                3. 全選並複製內容到Word
+                **方法2：瀏覽器表格複製（最簡單 - 含邊框）**
+                1. 點擊"💾 下載HTML表格文件"按鈕
+                2. 用瀏覽器打開下載的HTML文件
+                3. 在瀏覽器中選中整個表格並複製
+                4. 在Word中貼上，保留完整格式
                 
-                **方法3：手動輸入**
-                1. 參考下方顯示的表格
-                2. 在Word中手動創建表格並輸入數據
+                **方法3：Tab分隔文本（簡潔）**
+                1. 選擇"Tab分隔文本"格式
+                2. 複製文本並在Word中貼上
+                3. 手動添加表格邊框：選中表格 → "設計"標籤 → 選擇邊框樣式
                 
-                ### 💡 Word表格格式化技巧：
-                - 貼上後，選中表格 → 右鍵 → "表格屬性" → 調整對齊方式
-                - 可以添加邊框：選中表格 → "設計"標籤 → 選擇表格樣式
-                - 調整列寬：將鼠標懸停在列邊界上拖拽調整
+                **方法4：Excel下載（最方便 - 含邊框）**
+                1. 點擊下方"📊 下載Excel格式（含邊框）"按鈕
+                2. 在Excel中打開文件（已包含邊框格式）
+                3. 複製表格貼到Word中
+                
+                ### 💡 Word表格進階格式化：
+                - **調整邊框樣式**：選中表格 → "設計"標籤 → "邊框" → 選擇樣式
+                - **調整對齊方式**：選中表格 → 右鍵 → "表格屬性" → "表格"標籤
+                - **調整列寬**：將鼠標懸停在列邊界上拖拽
+                - **格式化數字**：選中溫度列 → 右鍵 → "設定儲存格格式"
+                - **添加標題樣式**：選中標題列 → "常用"標籤 → 設定粗體、底色等
                 """)
+            
+            # 在表格下方添加HTML預覽
+            with st.expander("🔍 HTML表格預覽（可直接複製）", expanded=False):
+                st.markdown("**以下是帶邊框的HTML表格，可直接選中複製：**")
+                html_table = self._prepare_html_table(display_df)
+                st.markdown(html_table, unsafe_allow_html=True)
+                st.info("💡 提示：在上方表格上按住滑鼠左鍵拖拽選中整個表格，然後Ctrl+C複製，到Word中Ctrl+V貼上")
             
             # 自定義樣式
             st.markdown("""
@@ -2094,23 +2110,57 @@ class SummaryRenderer:
                 )
             
             with col2:
-                # 準備Excel格式的數據
+                # 準備Excel格式的數據（含邊框）
                 excel_buffer = io.BytesIO()
-                with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
-                    # 寫入顯示用的表格
-                    display_df.to_excel(writer, sheet_name='溫度摘要', index=False)
-                    # 寫入完整數據
-                    export_df.to_excel(writer, sheet_name='完整數據', index=False)
-                
-                excel_data = excel_buffer.getvalue()
-                
-                st.download_button(
-                    label="📊 下載Excel格式 (推薦)",
-                    data=excel_data,
-                    file_name=f"temperature_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    help="Excel格式，包含格式化的表格，可直接在Word中使用"
-                )
+                try:
+                    with pd.ExcelWriter(excel_buffer, engine='openpyxl') as writer:
+                        # 寫入顯示用的表格
+                        display_df.to_excel(writer, sheet_name='溫度摘要', index=False)
+                        # 寫入完整數據
+                        export_df.to_excel(writer, sheet_name='完整數據', index=False)
+                        
+                        # 嘗試添加邊框格式
+                        try:
+                            from openpyxl.styles import Border, Side
+                            
+                            # 獲取工作表
+                            ws1 = writer.sheets['溫度摘要']
+                            ws2 = writer.sheets['完整數據']
+                            
+                            # 定義邊框樣式
+                            thin_border = Border(
+                                left=Side(style='thin'),
+                                right=Side(style='thin'),
+                                top=Side(style='thin'),
+                                bottom=Side(style='thin')
+                            )
+                            
+                            # 為溫度摘要表添加邊框
+                            for row in ws1.iter_rows(min_row=1, max_row=len(display_df)+1, 
+                                                   min_col=1, max_col=len(display_df.columns)):
+                                for cell in row:
+                                    cell.border = thin_border
+                            
+                            # 為完整數據表添加邊框
+                            for row in ws2.iter_rows(min_row=1, max_row=len(export_df)+1, 
+                                                   min_col=1, max_col=len(export_df.columns)):
+                                for cell in row:
+                                    cell.border = thin_border
+                        except ImportError:
+                            pass  # 如果無法導入openpyxl.styles，則跳過邊框格式
+                    
+                    excel_data = excel_buffer.getvalue()
+                    border_text = "（含邊框）" if 'openpyxl.styles' in globals() else ""
+                    
+                    st.download_button(
+                        label=f"📊 下載Excel格式{border_text}",
+                        data=excel_data,
+                        file_name=f"temperature_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        help="Excel格式，包含表格數據，可直接複製到Word中"
+                    )
+                except Exception as e:
+                    st.error(f"Excel生成失敗: {e}")
             
             # 顯示溫度分布圖
             self._render_temperature_distribution_chart(summary_df)
@@ -2137,6 +2187,71 @@ class SummaryRenderer:
             lines.append(data_line)
         
         return "\n".join(lines)
+    
+    def _prepare_html_table(self, display_df: pd.DataFrame) -> str:
+        """準備帶邊框的HTML表格格式"""
+        if display_df.empty:
+            return ""
+        
+        # 創建HTML表格
+        html_parts = []
+        
+        # 添加CSS樣式
+        html_parts.append("""
+        <style>
+        .temp-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        .temp-table th, .temp-table td {
+            border: 1px solid #333333;
+            padding: 8px;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .temp-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+            color: #333333;
+        }
+        .temp-table td {
+            background-color: #ffffff;
+        }
+        .temp-table tr:nth-child(even) td {
+            background-color: #f9f9f9;
+        }
+        </style>
+        """)
+        
+        # 開始表格
+        html_parts.append('<table class="temp-table">')
+        
+        # 表格標題行
+        html_parts.append('<thead>')
+        html_parts.append('<tr>')
+        for header in display_df.columns:
+            html_parts.append(f'<th>{header}</th>')
+        html_parts.append('</tr>')
+        html_parts.append('</thead>')
+        
+        # 表格數據行
+        html_parts.append('<tbody>')
+        for _, row in display_df.iterrows():
+            html_parts.append('<tr>')
+            for value in row:
+                # 處理空值
+                cell_value = str(value) if pd.notna(value) else ""
+                html_parts.append(f'<td>{cell_value}</td>')
+            html_parts.append('</tr>')
+        html_parts.append('</tbody>')
+        
+        # 結束表格
+        html_parts.append('</table>')
+        
+        return "\n".join(html_parts)
     
     def _render_temperature_distribution_chart(self, summary_df: pd.DataFrame):
         """渲染溫度分布圖表"""
@@ -2235,38 +2350,43 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🎨 v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy) 更新內容：
+        ### 🎨 v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy with Borders) 更新內容：
         - 📋 **修復一鍵複製功能** - 移除不可靠的JavaScript複製按鈕
-        - 📝 **優化複製體驗** - 使用Streamlit原生text_area，可靠且易用
-        - 💾 **增加Excel下載** - 提供Excel格式下載，更方便Word導入
-        - 📖 **詳細操作指導** - 提供三種複製方法，確保用戶能成功複製
+        - 🖼️ **新增HTML表格複製** - 支援帶邊框的表格格式，複製到Word保留完整格式
+        - 📝 **雙格式選擇** - HTML表格（含邊框）和Tab分隔文本兩種格式
+        - 🔍 **HTML表格預覽** - 可直接從網頁選中表格複製到Word
+        - 💾 **增強Excel下載** - Excel文件包含完整邊框格式
+        - 📖 **詳細操作指導** - 四種複製方法，確保用戶能成功複製帶邊框的表格
         - 🖥️ **PTAT log優化** - 僅顯示MSR Package Temperature
         - 📝 **Spec欄位留空** - Spec location、spec、Ref Tc spec三欄位留空供用戶填寫
         
-        ### 🔧 修復的複製功能：
-        - **移除JavaScript複製** - 不再依賴不可靠的clipboard API
-        - **text_area複製方案** - 用戶可直接選擇文本並複製
-        - **三種複製方法** - 直接複製、下載文本文件、Excel下載
-        - **詳細操作說明** - 包含Word表格格式化技巧
-        - **Tab分隔格式** - 在Word中會自動對齊為表格
+        ### 🖼️ 新增的邊框表格功能：
+        - **HTML表格格式** - 包含完整CSS樣式和邊框定義
+        - **瀏覽器預覽** - 在網頁中直接顯示帶邊框的表格供複製
+        - **Excel邊框格式** - 下載的Excel文件包含完整邊框樣式
+        - **四種複製方法** - HTML複製、瀏覽器複製、文本複製、Excel複製
+        - **自動格式化** - 表格包含斑馬紋和標題樣式
         
-        ### 📋 新的複製使用方法：
+        ### 📋 帶邊框的複製方法：
         
-        **方法1：直接複製（推薦）**
-        1. 點擊Summary標籤頁右側的文本框
-        2. 按 `Ctrl + A` 全選文本
-        3. 按 `Ctrl + C` 複製
-        4. 在Word中按 `Ctrl + V` 貼上
-        5. Word會自動識別Tab分隔並對齊為表格
+        **方法1：HTML表格複製（推薦 - 含邊框）**
+        1. 選擇"HTML表格（含邊框）"格式
+        2. 複製HTML代碼到Word中
+        3. Word會自動生成完整的表格，包含邊框和格式
         
-        **方法2：Excel下載（最方便）**
-        1. 點擊"📊 下載Excel格式"按鈕
-        2. 在Excel中打開下載的文件
+        **方法2：瀏覽器表格複製（最簡單 - 含邊框）**
+        1. 展開"HTML表格預覽"區域
+        2. 在瀏覽器中選中整個表格並複製
+        3. 在Word中貼上，保留完整格式
+        
+        **方法3：Excel下載（最方便 - 含邊框）**
+        1. 點擊"下載Excel格式（含邊框）"按鈕
+        2. 在Excel中打開文件（已包含邊框格式）
         3. 複製表格貼到Word中
         
-        **方法3：文本文件下載（備用）**
-        1. 點擊"💾 下載表格文本文件"
-        2. 用記事本打開並複製內容
+        **方法4：Tab分隔文本（需手動加邊框）**
+        1. 選擇"Tab分隔文本"格式
+        2. 複製到Word後手動添加邊框樣式
         
         ### 💡 Word表格格式化技巧：
         - 貼上後，選中表格 → 右鍵 → "表格屬性" → 調整對齊方式
@@ -2352,7 +2472,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>📊 溫度數據視覺化平台</h1>
-        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合 (修復複製功能)</p>
+        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合 (支援帶邊框表格複製)</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -2373,7 +2493,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.8 修復版：多檔案獨立分析 + Summary整合，修復複製功能"
+        help="v10.3.8 修復版：多檔案獨立分析 + Summary整合，支援帶邊框表格複製"
     )
     
     # 顯示訪問計數器
@@ -2518,51 +2638,59 @@ def main():
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
         - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據（完整/部分檔案）
         
-        ### ✨ v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy) 特色
+        ### ✨ v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy with Borders) 特色
         
         - 📋 **修復複製功能** - 移除不可靠的JavaScript，使用穩定的text_area方案
-        - 💾 **增加Excel下載** - 提供Excel格式下載，更方便Word導入
-        - 📖 **詳細操作指導** - 三種複製方法，確保用戶能成功複製到Word
+        - 🖼️ **新增HTML表格複製** - 支援帶邊框的表格格式，保留完整樣式
+        - 💾 **增強Excel下載** - Excel文件包含完整邊框格式
+        - 📖 **四種複製方法** - HTML複製、瀏覽器複製、文本複製、Excel複製
         - 🖥️ **PTAT數據精簡** - 僅顯示MSR Package Temperature，避免數據冗餘
         - 📝 **用戶自定義Spec** - Spec location、spec、Ref Tc spec欄位留空供填寫
         - 🎯 **多檔案獨立分析** - 每個log檔案都有專屬的分析結果和控制面板
         - 📑 **智能標籤分組** - 使用標籤頁將不同檔案清晰分離
         - 🔧 **檔案類型識別** - 自動識別並標記GPUMon、PTAT、YOKOGAWA檔案
         
-        ### 🔧 修復的複製功能特點
+        ### 🖼️ 新增邊框表格複製功能
         
-        - **🚫 移除JavaScript複製** - 不再依賴不可靠的clipboard API
-        - **📝 text_area複製方案** - 用戶可直接選擇文本並複製
-        - **💾 三種複製方法** - 直接複製、下載文本文件、Excel下載
-        - **📖 詳細操作說明** - 包含Word表格格式化技巧
-        - **📋 Tab分隔格式** - 在Word中會自動對齊為表格
+        - **🎨 HTML表格格式** - 包含完整CSS樣式和邊框定義
+        - **🔍 瀏覽器預覽** - 在網頁中直接顯示帶邊框的表格供複製
+        - **💾 Excel邊框格式** - 下載的Excel文件包含完整邊框樣式
+        - **📋 四種複製方法** - 確保用戶能成功複製帶邊框的表格
+        - **🎨 自動格式化** - 表格包含斑馬紋、標題樣式和完整邊框
         
-        ### 📋 Summary標籤頁複製使用方法
+        ### 📋 Summary標籤頁邊框表格複製方法
         
-        **方法1：直接複製（推薦）**
+        **方法1：HTML表格複製（推薦 - 含邊框）**
         1. 進入Summary標籤頁
-        2. 點擊表格右側的文本框
-        3. 按 `Ctrl + A` 全選文本
-        4. 按 `Ctrl + C` 複製
-        5. 在Word中按 `Ctrl + V` 貼上
-        6. Word會自動識別Tab分隔並對齊為表格
+        2. 選擇"HTML表格（含邊框）"格式
+        3. 複製HTML代碼，在Word中貼上
+        4. Word會自動生成完整的表格，包含邊框和格式
         
-        **方法2：Excel下載（最方便）**
-        1. 點擊"📊 下載Excel格式"按鈕
-        2. 在Excel中打開下載的文件
-        3. 複製表格貼到Word中
+        **方法2：瀏覽器表格複製（最簡單 - 含邊框）**
+        1. 展開"HTML表格預覽"區域
+        2. 在瀏覽器中選中整個表格（拖拽選擇）
+        3. 按Ctrl+C複製，在Word中Ctrl+V貼上
+        4. 保留完整的表格格式和邊框
         
-        **方法3：文本文件下載（備用）**
-        1. 點擊"💾 下載表格文本文件"
-        2. 用記事本或Word打開下載的文件
-        3. 全選並複製內容到Word
+        **方法3：Excel下載（最方便 - 含邊框）**
+        1. 點擊"📊 下載Excel格式（含邊框）"按鈕
+        2. 在Excel中打開下載的文件（已包含邊框格式）
+        3. 複製表格貼到Word中，保留所有格式
         
-        ### 💡 Word表格格式化技巧
+        **方法4：Tab分隔文本（需手動加邊框）**
+        1. 選擇"Tab分隔文本"格式
+        2. 複製到Word後會自動對齊為表格
+        3. 手動添加邊框：選中表格 → "設計"標籤 → 選擇邊框樣式
         
-        - **調整對齊** - 貼上後，選中表格 → 右鍵 → "表格屬性" → 調整對齊方式
-        - **添加邊框** - 選中表格 → "設計"標籤 → 選擇表格樣式
-        - **調整列寬** - 將鼠標懸停在列邊界上拖拽調整
-        - **格式化數字** - 選中溫度列 → 右鍵 → "表格屬性" → 設定小數位數
+        ### 💡 Word表格格式化進階技巧
+        
+        - **自動邊框** - HTML和Excel複製會自動包含邊框
+        - **調整邊框樣式** - 選中表格 → "設計"標籤 → "邊框" → 選擇不同樣式
+        - **調整對齊方式** - 選中表格 → 右鍵 → "表格屬性" → "表格"標籤
+        - **調整列寬** - 將鼠標懸停在列邊界上拖拽
+        - **格式化數字** - 選中溫度列 → 右鍵 → "設定儲存格格式"
+        - **添加標題樣式** - 選中標題列 → "常用"標籤 → 設定粗體、底色等
+        - **表格樣式** - 選中表格 → "設計"標籤 → 選擇預設表格樣式
         
         ### 🔍 動態關鍵字搜索技術
         
