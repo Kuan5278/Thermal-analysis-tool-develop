@@ -1934,27 +1934,55 @@ class SummaryRenderer:
             with col2:
                 # 準備複製用的文本格式
                 copy_text = self._prepare_copy_text(display_df)
+                html_table = self._prepare_html_table(display_df)
                 
                 # 使用Streamlit的text_area作為主要複製方案
                 st.markdown("**📋 複製表格數據**")
                 
-                # 創建一個可選中和複製的文本區域
-                st.text_area(
-                    label="點擊下方文本框，Ctrl+A全選，Ctrl+C複製",
-                    value=copy_text,
-                    height=120,
-                    help="選擇全部文本並複製，然後在Word中貼上（會自動對齊為表格）",
-                    key="copy_text_area"
+                # 添加複製格式選擇
+                copy_format = st.radio(
+                    "選擇複製格式：",
+                    ["HTML表格（含邊框）", "Tab分隔文本"],
+                    index=0,
+                    help="HTML格式複製到Word會保留邊框，Tab分隔格式更簡潔"
                 )
                 
-                # 提供下載功能作為備用方案
-                st.download_button(
-                    label="💾 下載表格文本文件",
-                    data=copy_text,
-                    file_name=f"temperature_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
-                    mime="text/plain",
-                    help="下載為文本文件，可在Word中打開並貼上"
-                )
+                if copy_format == "HTML表格（含邊框）":
+                    # HTML表格格式
+                    st.text_area(
+                        label="HTML表格格式（複製到Word會保留邊框）",
+                        value=html_table,
+                        height=150,
+                        help="選擇全部HTML代碼並複製，在Word中貼上會保留完整表格格式和邊框",
+                        key="copy_html_area"
+                    )
+                    
+                    # 提供HTML文件下載
+                    st.download_button(
+                        label="💾 下載HTML表格文件",
+                        data=html_table,
+                        file_name=f"temperature_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html",
+                        mime="text/html",
+                        help="下載為HTML文件，用瀏覽器打開後複製表格到Word"
+                    )
+                else:
+                    # Tab分隔文本格式
+                    st.text_area(
+                        label="Tab分隔文本格式",
+                        value=copy_text,
+                        height=120,
+                        help="選擇全部文本並複製，在Word中貼上會自動對齊為表格",
+                        key="copy_text_area"
+                    )
+                    
+                    # 提供文本文件下載
+                    st.download_button(
+                        label="💾 下載表格文本文件",
+                        data=copy_text,
+                        file_name=f"temperature_table_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt",
+                        mime="text/plain",
+                        help="下載為文本文件，可在Word中打開並貼上"
+                    )
             
             # 新增操作說明
             with st.expander("📖 如何複製到Word", expanded=False):
