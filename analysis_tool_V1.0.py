@@ -1551,10 +1551,11 @@ class GPUMonRenderer:
         self.stats_calc = StatisticsCalculator()
         self.chart_gen = ChartGenerator()
     
-    def render_controls(self):
+    def render_controls(self, file_index=None):
         """渲染控制面板"""
         # 獲取當前檔案索引用於生成唯一key
-        file_index = getattr(st.session_state, 'current_file_index', 0)
+        if file_index is None:
+            file_index = getattr(st.session_state, 'current_file_index', 0)
         key_prefix = f"gpu_{file_index}_"
         
         st.sidebar.markdown("### ⚙️ GPUMon 圖表設定")
@@ -1665,7 +1666,7 @@ class GPUMonRenderer:
             st.markdown("#### 📊 GPU 使用率統計")
             st.dataframe(util_stats, use_container_width=True, hide_index=True)
     
-    def render(self):
+    def render(self, file_index=None):
         """渲染完整UI"""
         st.markdown("""
         <div class="gpumon-box">
@@ -1676,7 +1677,7 @@ class GPUMonRenderer:
         
         st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
-        left_col, right_col, x_range, left_y_range, right_y_range = self.render_controls()
+        left_col, right_col, x_range, left_y_range, right_y_range = self.render_controls(file_index)
         
         if left_col:
             self.render_chart(left_col, right_col, x_range, left_y_range, right_y_range)
@@ -1690,10 +1691,11 @@ class PTATRenderer:
         self.stats_calc = StatisticsCalculator()
         self.chart_gen = ChartGenerator()
     
-    def render_controls(self):
+    def render_controls(self, file_index=None):
         """渲染控制面板"""
         # 獲取當前檔案索引用於生成唯一key
-        file_index = getattr(st.session_state, 'current_file_index', 0)
+        if file_index is None:
+            file_index = getattr(st.session_state, 'current_file_index', 0)
         key_prefix = f"ptat_{file_index}_"
         
         st.sidebar.markdown("### ⚙️ PTAT 圖表設定")
@@ -1751,7 +1753,7 @@ class PTATRenderer:
         
         return left_y_axis, right_y_axis, x_range, left_y_range, right_y_range
     
-    def render(self):
+    def render(self, file_index=None):
         """渲染完整UI"""
         st.markdown("""
         <div class="info-box">
@@ -1762,7 +1764,7 @@ class PTATRenderer:
         
         st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
-        left_y_axis, right_y_axis, x_range, left_y_range, right_y_range = self.render_controls()
+        left_y_axis, right_y_axis, x_range, left_y_range, right_y_range = self.render_controls(file_index)
         
         if left_y_axis:
             st.markdown("### 📊 PTAT CPU 性能監控圖表")
@@ -1793,10 +1795,11 @@ class YokogawaRenderer:
         self.stats_calc = StatisticsCalculator()
         self.chart_gen = ChartGenerator()
     
-    def render(self):
+    def render(self, file_index=None):
         """渲染完整UI"""
         # 獲取當前檔案索引用於生成唯一key
-        file_index = getattr(st.session_state, 'current_file_index', 0)
+        if file_index is None:
+            file_index = getattr(st.session_state, 'current_file_index', 0)
         key_prefix = f"yoko_{file_index}_"
         
         st.markdown("""
@@ -2198,7 +2201,7 @@ def main():
             renderer = RendererFactory.create_renderer(log_data)
             
             if renderer:
-                renderer.render()
+                renderer.render(file_index=0)
             else:
                 st.error(f"不支援的Log類型: {log_data.metadata.log_type}")
         
@@ -2266,11 +2269,8 @@ def main():
                     renderer = RendererFactory.create_renderer(log_data)
                     
                     if renderer:
-                        # 修改sidebar key以避免衝突
-                        st.session_state.current_file_index = i
-                        
-                        # 渲染該檔案的完整UI
-                        renderer.render()
+                        # 渲染該檔案的完整UI，傳遞正確的file_index
+                        renderer.render(file_index=i)
                         
                     else:
                         st.error(f"不支援的Log類型: {log_data.metadata.log_type}")
@@ -2296,8 +2296,8 @@ def main():
                 help="選擇要在側邊欄中控制的檔案"
             )
             
-            st.sidebar.info(f"💡 當前控制：{log_data_list[selected_file_index].metadata.filename}")
-            st.session_state.current_file_index = selected_file_index
+            st.sidebar.info(f"💡 當前選擇：{log_data_list[selected_file_index].metadata.filename}")
+            # 注意：這個選擇器主要用於顯示信息，實際的控制是在各個tab中獨立進行的
     
     else:
         st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件進行分析")
