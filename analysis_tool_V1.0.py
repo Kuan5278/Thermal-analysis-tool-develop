@@ -1827,6 +1827,107 @@ class ChartGenerator:
         ax.set_xlabel('Elapsed Time (seconds)', fontsize=11)
         ax.set_ylabel(y_label, fontsize=11)
         ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
+        
+        # 設定圖例
+        if len(available_columns) <= 10:
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
+        else:
+            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
+        
+        if x_limits:
+            ax.set_xlim(x_limits)
+        
+        if y_limits:
+            ax.set_ylim(y_limits)
+        
+        fig.tight_layout()
+        return fig
+    
+    @staticmethod
+    def generate_burnin_comparison_chart(log_data_list: List[LogData], comparison_type: str, core_selection: str):
+        """生成多個Burn-in檔案的比較圖表"""
+        burnin_logs = [log for log in log_data_list if log.metadata.log_type == "Burn-in Log"]
+        
+        if len(burnin_logs) < 2:
+            return None
+        
+        fig, ax = plt.subplots(figsize=(14, 7))
+        
+        colors = plt.cm.Set1(np.linspace(0, 1, len(burnin_logs)))
+        
+        for i, log_data in enumerate(burnin_logs):
+            df = log_data.df
+            filename = log_data.metadata.filename
+            
+            # 根據比較類型選擇欄位
+            if comparison_type == "temperature":
+                target_cols = [col for col in df.columns if 'temp' in col.lower()]
+                y_label = "Temperature (°C)"
+                chart_title = "Burn-in Temperature Comparison"
+            else:  # frequency
+                target_cols = [col for col in df.columns if any(keyword in col.lower() for keyword in ['freq', 'clock', 'speed'])]
+                y_label = "Frequency (kHz)"
+                chart_title = "Burn-in Frequency Comparison"
+            
+            if not target_cols:
+                continue
+            
+            # 根據core選擇策略
+            y_data = None
+            label = ""
+            
+            if core_selection == "max":
+                # 選擇最高值的軌跡
+                max_values = []
+                for col in target_cols:
+                    col_data = pd.to_numeric(df[col], errors='coerce')
+                    if not col_data.isna().all():
+                        max_values.append((col, col_data.max()))
+                
+                if max_values:
+                    selected_col = max(max_values, key=lambda x: x[1])[0]
+                    y_data = pd.to_numeric(df[selected_col], errors='coerce')
+                    label = f"{filename} (Max: {selected_col.replace('BURNIN: ', '')})"
+            
+            elif core_selection == "avg":
+                # 計算所有core的平均值
+                all_data = []
+                for col in target_cols:
+                    col_data = pd.to_numeric(df[col], errors='coerce')
+                    if not col_data.isna().all():
+                        all_data.append(col_data)
+                
+                if all_data:
+                    y_data = pd.concat(all_data, axis=1).mean(axis=1)
+                    label = f"{filename} (Avg of {len(all_data)} cores)"
+            
+            else:  # specific core
+                target_col = None
+                for col in target_cols:
+                    if core_selection.lower() in col.lower():
+                        target_col = col
+                        break
+                
+                if target_col is None and target_cols:
+                    target_col = target_cols[0]  # fallback to first available
+                
+                if target_col:
+                    y_data = pd.to_numeric(df[target_col], errors='coerce')
+                    label = f"{filename} ({target_col.replace('BURNIN: ', '')})"
+            
+            # 繪製線條
+            if y_data is not None and not y_data.isna().all():
+                x_axis_seconds = df.index.total_seconds()
+                ax.plot(x_axis_seconds, y_data, 
+                       label=label, 
+                       color=colors[i], 
+                       linewidth=2, 
+                       alpha=0.8)
+        
+        ax.set_title(chart_title, fontsize=14, fontweight='bold')
+        ax.set_xlabel('Elapsed Time (seconds)', fontsize=11)
+        ax.set_ylabel(y_label, fontsize=11)
+        ax.grid(True, linestyle='--', linewidth=0.5, alpha=0.7)
         ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
         
         fig.tight_layout()
@@ -2944,102 +3045,4 @@ def main():
 
 
 if __name__ == "__main__":
-    main()True, linestyle='--', linewidth=0.5, alpha=0.7)
-        
-        # 設定圖例
-        if len(available_columns) <= 10:
-            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=9)
-        else:
-            ax.legend(bbox_to_anchor=(1.05, 1), loc='upper left', fontsize=8, ncol=2)
-        
-        if x_limits:
-            ax.set_xlim(x_limits)
-        
-        if y_limits:
-            ax.set_ylim(y_limits)
-        
-        fig.tight_layout()
-        return fig
-    
-    @staticmethod
-    def generate_burnin_comparison_chart(log_data_list: List[LogData], comparison_type: str, core_selection: str):
-        """生成多個Burn-in檔案的比較圖表"""
-        burnin_logs = [log for log in log_data_list if log.metadata.log_type == "Burn-in Log"]
-        
-        if len(burnin_logs) < 2:
-            return None
-        
-        fig, ax = plt.subplots(figsize=(14, 7))
-        
-        colors = plt.cm.Set1(np.linspace(0, 1, len(burnin_logs)))
-        
-        for i, log_data in enumerate(burnin_logs):
-            df = log_data.df
-            filename = log_data.metadata.filename
-            
-            # 根據比較類型選擇欄位
-            if comparison_type == "temperature":
-                target_cols = [col for col in df.columns if 'temp' in col.lower()]
-                y_label = "Temperature (°C)"
-                chart_title = "Burn-in Temperature Comparison"
-            else:  # frequency
-                target_cols = [col for col in df.columns if any(keyword in col.lower() for keyword in ['freq', 'clock', 'speed'])]
-                y_label = "Frequency (kHz)"
-                chart_title = "Burn-in Frequency Comparison"
-            
-            if not target_cols:
-                continue
-            
-            # 根據core選擇策略
-            if core_selection == "max":
-                # 選擇最高值的軌跡
-                max_values = []
-                for col in target_cols:
-                    col_data = pd.to_numeric(df[col], errors='coerce')
-                    if not col_data.isna().all():
-                        max_values.append((col, col_data.max()))
-                
-                if max_values:
-                    selected_col = max(max_values, key=lambda x: x[1])[0]
-                    y_data = pd.to_numeric(df[selected_col], errors='coerce')
-                    label = f"{filename} (Max: {selected_col.replace('BURNIN: ', '')})"
-            
-            elif core_selection == "avg":
-                # 計算所有core的平均值
-                all_data = []
-                for col in target_cols:
-                    col_data = pd.to_numeric(df[col], errors='coerce')
-                    if not col_data.isna().all():
-                        all_data.append(col_data)
-                
-                if all_data:
-                    y_data = pd.concat(all_data, axis=1).mean(axis=1)
-                    label = f"{filename} (Avg of {len(all_data)} cores)"
-            
-            else:  # specific core
-                target_col = None
-                for col in target_cols:
-                    if core_selection.lower() in col.lower():
-                        target_col = col
-                        break
-                
-                if target_col is None and target_cols:
-                    target_col = target_cols[0]  # fallback to first available
-                
-                if target_col:
-                    y_data = pd.to_numeric(df[target_col], errors='coerce')
-                    label = f"{filename} ({target_col.replace('BURNIN: ', '')})"
-            
-            # 繪製線條
-            if 'y_data' in locals() and not y_data.isna().all():
-                x_axis_seconds = df.index.total_seconds()
-                ax.plot(x_axis_seconds, y_data, 
-                       label=label, 
-                       color=colors[i], 
-                       linewidth=2, 
-                       alpha=0.8)
-        
-        ax.set_title(chart_title, fontsize=14, fontweight='bold')
-        ax.set_xlabel('Elapsed Time (seconds)', fontsize=11)
-        ax.set_ylabel(y_label, fontsize=11)
-        ax.grid(
+    main()
