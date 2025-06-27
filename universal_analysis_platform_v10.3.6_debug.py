@@ -1,5 +1,5 @@
-# thermal_analysis_platform_v10.3.6.py
-# 溫度數據視覺化平台 - v10.3.6 超簡潔界面版 (所有解析資訊隱藏)
+# thermal_analysis_platform_v10.3.8_optimized_fixed.py
+# 溫度數據視覺化平台 - v10.3.8 多檔案獨立分析 + Summary整合版 (優化版 + 修復一鍵複製)
 
 import streamlit as st
 import pandas as pd
@@ -15,7 +15,7 @@ import json
 import os
 
 # 版本資訊
-VERSION = "v10.3.6 Ultra Clean Interface"
+VERSION = "v10.3.8 Multi-File Analysis with Summary (Optimized + Fixed Copy with Borders)"
 VERSION_DATE = "2025年6月"
 
 # =============================================================================
@@ -586,7 +586,7 @@ class PTATParser(LogParser):
             return None
 
 class YokogawaParser(LogParser):
-    """YOKOGAWA解析器 - v10.3.6 超簡潔版本"""
+    """YOKOGAWA解析器 - v10.3.8 超簡潔版本"""
     
     @property
     def log_type(self) -> str:
@@ -597,7 +597,7 @@ class YokogawaParser(LogParser):
         return True
     
     def parse(self, file_content: io.BytesIO, filename: str) -> Optional[LogData]:
-        self.logger.info(f"啟動YOKOGAWA解析器 (v10.3.6超簡潔版) - {filename}")
+        self.logger.info(f"啟動YOKOGAWA解析器 (v10.3.8超簡潔版) - {filename}")
         
         try:
             is_excel = '.xlsx' in filename.lower() or '.xls' in filename.lower()
@@ -960,7 +960,7 @@ class YokogawaParser(LogParser):
             file_size_kb=file_size_kb
         )
         
-        self.logger.success(f"YOKOGAWA v10.3.6 解析完成！數據形狀: {result_df.shape}")
+        self.logger.success(f"YOKOGAWA v10.3.8 解析完成！數據形狀: {result_df.shape}")
         
         return LogData(result_df, metadata)
 
@@ -1274,7 +1274,136 @@ class StatisticsCalculator:
         return pd.DataFrame(stats_data)
 
 # =============================================================================
-# 5. 圖表生成層 (Chart Generation Layer)
+# 5. Summary溫度整合表格生成器 (Temperature Summary Generator) - 優化版
+# =============================================================================
+
+class TemperatureSummaryGenerator:
+    """溫度整合摘要生成器 - v10.3.8優化版"""
+    
+    @staticmethod
+    def generate_summary_table(log_data_list: List[LogData]) -> pd.DataFrame:
+        """生成溫度摘要表格，按照用戶提供的格式"""
+        summary_data = []
+        ch_number = 1
+        
+        for log_data in log_data_list:
+            df = log_data.df
+            log_type = log_data.metadata.log_type
+            filename = log_data.metadata.filename
+            
+            # 獲取所有數值型欄位
+            numeric_cols = df.select_dtypes(include=['number']).columns
+            temp_cols = [col for col in numeric_cols if col not in ['Date', 'sec', 'RT', 'TIME']]
+            
+            # 針對PTAT log特殊處理 - 只保留MSR Package Temperature
+            if "PTAT" in log_type:
+                temp_cols = [col for col in temp_cols if 'msr' in col.lower() and 'package' in col.lower() and 'temperature' in col.lower()]
+            
+            for col in temp_cols:
+                temp_data = pd.to_numeric(df[col], errors='coerce').dropna()
+                if len(temp_data) > 0:
+                    max_temp = temp_data.max()
+                    
+                    # 清理欄位名稱
+                    clean_col_name = col
+                    if clean_col_name.startswith('YOKO: '):
+                        clean_col_name = clean_col_name.replace('YOKO: ', '')
+                    elif clean_col_name.startswith('PTAT: '):
+                        clean_col_name = clean_col_name.replace('PTAT: ', '')
+                    elif clean_col_name.startswith('GPU: '):
+                        clean_col_name = clean_col_name.replace('GPU: ', '')
+                    
+                    # 跳過非溫度相關欄位
+                    if clean_col_name.lower() in ['sec', 'time', 'rt', 'date', 'iteration']:
+                        continue
+                    
+                    # 根據不同log類型設定描述
+                    description = ""
+                    if "GPU" in log_type:
+                        if "Temperature" in clean_col_name:
+                            description = "GPU Temperature"
+                    elif "PTAT" in log_type:
+                        if "MSR" in clean_col_name and "Package" in clean_col_name:
+                            description = "CPU MSR Package Temperature"
+                    else:  # YOKOGAWA或其他
+                        # 根據欄位名稱推測類型
+                        if any(keyword in clean_col_name.upper() for keyword in ['CPU', 'PROCESSOR']):
+                            description = "CPU"
+                        elif any(keyword in clean_col_name.upper() for keyword in ['SSD', 'STORAGE']):
+                            description = "SSD"
+                        elif any(keyword in clean_col_name.upper() for keyword in ['DDR', 'MEMORY', 'RAM']):
+                            description = "Memory"
+                        elif any(keyword in clean_col_name.upper() for keyword in ['WIFI', 'WIRELESS']):
+                            description = "WIFI"
+                        else:
+                            description = ""
+                    
+                    # 格式化溫度值
+                    if max_temp > 200:  # 可能是毫度或其他單位
+                        formatted_temp = f"{max_temp/1000:.1f}" if max_temp > 1000 else f"{max_temp:.1f}"
+                    else:
+                        formatted_temp = f"{max_temp:.1f}"
+                    
+                    # 所有spec相關欄位都留空
+                    summary_data.append({
+                        'Ch.': ch_number,
+                        'Location': clean_col_name,
+                        'Description': description,
+                        'Spec location': "",  # 留空給用戶填寫
+                        'spec': "",  # 留空給用戶填寫
+                        'Ref Tc spec': "",  # 留空給用戶填寫
+                        'Result (Case Temp)': formatted_temp,
+                        'Source File': filename,
+                        'Log Type': log_type
+                    })
+                    
+                    ch_number += 1
+        
+        return pd.DataFrame(summary_data)
+    
+    @staticmethod
+    def format_summary_table_for_display(summary_df: pd.DataFrame) -> pd.DataFrame:
+        """格式化表格以符合顯示要求"""
+        if summary_df.empty:
+            return pd.DataFrame()
+        
+        # 創建顯示用的DataFrame，不包含Source File和Log Type
+        display_df = summary_df[['Ch.', 'Location', 'Description', 'Spec location', 'spec', 'Ref Tc spec', 'Result (Case Temp)']].copy()
+        
+        return display_df
+    
+    @staticmethod
+    def get_summary_statistics(summary_df: pd.DataFrame) -> dict:
+        """獲取摘要統計信息"""
+        if summary_df.empty:
+            return {}
+        
+        try:
+            # 轉換溫度為數值
+            temps = pd.to_numeric(summary_df['Result (Case Temp)'], errors='coerce').dropna()
+            
+            stats = {
+                'total_channels': len(summary_df),
+                'max_temp': temps.max() if len(temps) > 0 else 0,
+                'min_temp': temps.min() if len(temps) > 0 else 0,
+                'avg_temp': temps.mean() if len(temps) > 0 else 0,
+                'files_analyzed': summary_df['Source File'].nunique() if 'Source File' in summary_df.columns else 0,
+                'log_types': summary_df['Log Type'].unique().tolist() if 'Log Type' in summary_df.columns else []
+            }
+            
+            return stats
+        except Exception:
+            return {
+                'total_channels': len(summary_df),
+                'max_temp': 0,
+                'min_temp': 0,
+                'avg_temp': 0,
+                'files_analyzed': 0,
+                'log_types': []
+            }
+
+# =============================================================================
+# 6. 圖表生成層 (Chart Generation Layer)
 # =============================================================================
 
 class ChartGenerator:
@@ -1411,7 +1540,7 @@ class ChartGenerator:
         return fig
 
 # =============================================================================
-# 6. UI渲染層 (UI Rendering Layer)
+# 7. UI渲染層 (UI Rendering Layer)
 # =============================================================================
 
 class GPUMonRenderer:
@@ -1422,8 +1551,13 @@ class GPUMonRenderer:
         self.stats_calc = StatisticsCalculator()
         self.chart_gen = ChartGenerator()
     
-    def render_controls(self):
+    def render_controls(self, file_index=None):
         """渲染控制面板"""
+        # 獲取當前檔案索引用於生成唯一key
+        if file_index is None:
+            file_index = getattr(st.session_state, 'current_file_index', 0)
+        key_prefix = f"gpu_{file_index}_"
+        
         st.sidebar.markdown("### ⚙️ GPUMon 圖表設定")
         
         numeric_columns = self.log_data.numeric_columns
@@ -1441,7 +1575,8 @@ class GPUMonRenderer:
         left_y_axis = st.sidebar.selectbox(
             "📈 左側Y軸變數", 
             options=numeric_columns, 
-            index=default_left_index
+            index=default_left_index,
+            key=f"{key_prefix}left_y_axis"
         )
         
         right_y_axis_options = ['None'] + numeric_columns
@@ -1454,7 +1589,8 @@ class GPUMonRenderer:
         right_y_axis = st.sidebar.selectbox(
             "📊 右側Y軸變數 (可選)", 
             options=right_y_axis_options, 
-            index=default_right_index
+            index=default_right_index,
+            key=f"{key_prefix}right_y_axis"
         )
         
         st.sidebar.markdown("#### ⏱️ 時間範圍設定")
@@ -1465,30 +1601,31 @@ class GPUMonRenderer:
             min_value=time_min,
             max_value=time_max,
             value=(time_min, time_max),
-            step=1.0
+            step=1.0,
+            key=f"{key_prefix}x_range"
         )
         
         st.sidebar.markdown("#### 📏 Y軸範圍設定")
         
-        left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制")
+        left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制", key=f"{key_prefix}left_y_range_enabled")
         left_y_range = None
         if left_y_range_enabled:
             col1, col2 = st.sidebar.columns(2)
             with col1:
-                left_y_min = st.number_input("左Y軸最小值", value=0.0, key="left_y_min")
+                left_y_min = st.number_input("左Y軸最小值", value=0.0, key=f"{key_prefix}left_y_min")
             with col2:
-                left_y_max = st.number_input("左Y軸最大值", value=100.0, key="left_y_max")
+                left_y_max = st.number_input("左Y軸最大值", value=100.0, key=f"{key_prefix}left_y_max")
             left_y_range = (left_y_min, left_y_max)
         
         right_y_range = None
         if right_y_axis and right_y_axis != 'None':
-            right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制")
+            right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制", key=f"{key_prefix}right_y_range_enabled")
             if right_y_range_enabled:
                 col1, col2 = st.sidebar.columns(2)
                 with col1:
-                    right_y_min = st.number_input("右Y軸最小值", value=0.0, key="right_y_min")
+                    right_y_min = st.number_input("右Y軸最小值", value=0.0, key=f"{key_prefix}right_y_min")
                 with col2:
-                    right_y_max = st.number_input("右Y軸最大值", value=100.0, key="right_y_max")
+                    right_y_max = st.number_input("右Y軸最大值", value=100.0, key=f"{key_prefix}right_y_max")
                 right_y_range = (right_y_min, right_y_max)
         
         return left_y_axis, right_y_axis, x_range, left_y_range, right_y_range
@@ -1529,7 +1666,7 @@ class GPUMonRenderer:
             st.markdown("#### 📊 GPU 使用率統計")
             st.dataframe(util_stats, use_container_width=True, hide_index=True)
     
-    def render(self):
+    def render(self, file_index=None):
         """渲染完整UI"""
         st.markdown("""
         <div class="gpumon-box">
@@ -1540,7 +1677,7 @@ class GPUMonRenderer:
         
         st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
-        left_col, right_col, x_range, left_y_range, right_y_range = self.render_controls()
+        left_col, right_col, x_range, left_y_range, right_y_range = self.render_controls(file_index)
         
         if left_col:
             self.render_chart(left_col, right_col, x_range, left_y_range, right_y_range)
@@ -1554,8 +1691,13 @@ class PTATRenderer:
         self.stats_calc = StatisticsCalculator()
         self.chart_gen = ChartGenerator()
     
-    def render_controls(self):
+    def render_controls(self, file_index=None):
         """渲染控制面板"""
+        # 獲取當前檔案索引用於生成唯一key
+        if file_index is None:
+            file_index = getattr(st.session_state, 'current_file_index', 0)
+        key_prefix = f"ptat_{file_index}_"
+        
         st.sidebar.markdown("### ⚙️ PTAT 圖表設定")
         
         numeric_columns = self.log_data.numeric_columns
@@ -1570,7 +1712,7 @@ class PTATRenderer:
                 default_left_index = i
                 break
         
-        left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=default_left_index)
+        left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=default_left_index, key=f"{key_prefix}left_y_axis")
         
         right_y_axis_options = ['None'] + numeric_columns
         default_right_index = 0
@@ -1579,39 +1721,39 @@ class PTATRenderer:
                 default_right_index = i
                 break
         
-        right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=default_right_index)
+        right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=default_right_index, key=f"{key_prefix}right_y_axis")
         
         st.sidebar.markdown("#### ⏱️ 時間範圍設定")
         
         time_min, time_max = self.log_data.get_time_range()
-        x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
+        x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0, key=f"{key_prefix}x_range")
         
         st.sidebar.markdown("#### 📏 Y軸範圍設定")
         
-        left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制", key="ptat_left_y")
+        left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制", key=f"{key_prefix}left_y_range_enabled")
         left_y_range = None
         if left_y_range_enabled:
             col1, col2 = st.sidebar.columns(2)
             with col1:
-                left_y_min = st.number_input("左Y軸最小值", value=0.0, key="ptat_left_y_min")
+                left_y_min = st.number_input("左Y軸最小值", value=0.0, key=f"{key_prefix}left_y_min")
             with col2:
-                left_y_max = st.number_input("左Y軸最大值", value=100.0, key="ptat_left_y_max")
+                left_y_max = st.number_input("左Y軸最大值", value=100.0, key=f"{key_prefix}left_y_max")
             left_y_range = (left_y_min, left_y_max)
         
         right_y_range = None
         if right_y_axis and right_y_axis != 'None':
-            right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制", key="ptat_right_y")
+            right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制", key=f"{key_prefix}right_y_range_enabled")
             if right_y_range_enabled:
                 col1, col2 = st.sidebar.columns(2)
                 with col1:
-                    right_y_min = st.number_input("右Y軸最小值", value=0.0, key="ptat_right_y_min")
+                    right_y_min = st.number_input("右Y軸最小值", value=0.0, key=f"{key_prefix}right_y_min")
                 with col2:
-                    right_y_max = st.number_input("右Y軸最大值", value=100.0, key="ptat_right_y_max")
+                    right_y_max = st.number_input("右Y軸最大值", value=100.0, key=f"{key_prefix}right_y_max")
                 right_y_range = (right_y_min, right_y_max)
         
         return left_y_axis, right_y_axis, x_range, left_y_range, right_y_range
     
-    def render(self):
+    def render(self, file_index=None):
         """渲染完整UI"""
         st.markdown("""
         <div class="info-box">
@@ -1622,7 +1764,7 @@ class PTATRenderer:
         
         st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
-        left_y_axis, right_y_axis, x_range, left_y_range, right_y_range = self.render_controls()
+        left_y_axis, right_y_axis, x_range, left_y_range, right_y_range = self.render_controls(file_index)
         
         if left_y_axis:
             st.markdown("### 📊 PTAT CPU 性能監控圖表")
@@ -1646,18 +1788,23 @@ class PTATRenderer:
                 st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
 class YokogawaRenderer:
-    """YOKOGAWA UI渲染器 - v10.3.6 超簡潔版"""
+    """YOKOGAWA UI渲染器 - v10.3.8 超簡潔版"""
     
     def __init__(self, log_data: LogData):
         self.log_data = log_data
         self.stats_calc = StatisticsCalculator()
         self.chart_gen = ChartGenerator()
     
-    def render(self):
+    def render(self, file_index=None):
         """渲染完整UI"""
+        # 獲取當前檔案索引用於生成唯一key
+        if file_index is None:
+            file_index = getattr(st.session_state, 'current_file_index', 0)
+        key_prefix = f"yoko_{file_index}_"
+        
         st.markdown("""
         <div class="success-box">
-            <h4>📊 YOKOGAWA Log 解析完成！ (v10.3.6 超簡潔版)</h4>
+            <h4>📊 YOKOGAWA Log 解析完成！ (v10.3.8 多檔案獨立分析版)</h4>
             <p>✨ 智能解析成功，界面清爽，詳細日誌已隱藏在下拉選單中</p>
         </div>
         """, unsafe_allow_html=True)
@@ -1665,21 +1812,21 @@ class YokogawaRenderer:
         st.success(f"📊 數據載入：{self.log_data.metadata.rows} 行 × {self.log_data.metadata.columns} 列")
         
         st.sidebar.markdown("### ⚙️ YOKOGAWA 圖表設定")
-        chart_mode = st.sidebar.radio("📈 圖表模式", ["全通道溫度圖", "自定義雙軸圖"])
+        chart_mode = st.sidebar.radio("📈 圖表模式", ["全通道溫度圖", "自定義雙軸圖"], key=f"{key_prefix}chart_mode")
         
         time_min, time_max = self.log_data.get_time_range()
-        x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
+        x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0, key=f"{key_prefix}x_range")
         
         if chart_mode == "全通道溫度圖":
             st.sidebar.markdown("#### 📏 Y軸範圍設定")
-            y_range_enabled = st.sidebar.checkbox("啟用Y軸範圍限制")
+            y_range_enabled = st.sidebar.checkbox("啟用Y軸範圍限制", key=f"{key_prefix}y_range_enabled")
             y_range = None
             if y_range_enabled:
                 col1, col2 = st.sidebar.columns(2)
                 with col1:
-                    y_min = st.number_input("Y軸最小值", value=0.0, key="yoko_single_y_min")
+                    y_min = st.number_input("Y軸最小值", value=0.0, key=f"{key_prefix}y_min")
                 with col2:
-                    y_max = st.number_input("Y軸最大值", value=100.0, key="yoko_single_y_max")
+                    y_max = st.number_input("Y軸最大值", value=100.0, key=f"{key_prefix}y_max")
                 y_range = (y_min, y_max)
             
             st.markdown("### 📊 YOKOGAWA 全通道溫度圖表")
@@ -1691,31 +1838,31 @@ class YokogawaRenderer:
             numeric_columns = self.log_data.numeric_columns
             if numeric_columns:
                 st.sidebar.markdown("#### 🎯 參數選擇")
-                left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
+                left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0, key=f"{key_prefix}left_y_axis")
                 right_y_axis_options = ['None'] + numeric_columns
-                right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
+                right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0, key=f"{key_prefix}right_y_axis")
                 
                 st.sidebar.markdown("#### 📏 Y軸範圍設定")
                 
-                left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制", key="yoko_left_y")
+                left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制", key=f"{key_prefix}left_y_range_enabled")
                 left_y_range = None
                 if left_y_range_enabled:
                     col1, col2 = st.sidebar.columns(2)
                     with col1:
-                        left_y_min = st.number_input("左Y軸最小值", value=0.0, key="yoko_left_y_min")
+                        left_y_min = st.number_input("左Y軸最小值", value=0.0, key=f"{key_prefix}left_y_min")
                     with col2:
-                        left_y_max = st.number_input("左Y軸最大值", value=100.0, key="yoko_left_y_max")
+                        left_y_max = st.number_input("左Y軸最大值", value=100.0, key=f"{key_prefix}left_y_max")
                     left_y_range = (left_y_min, left_y_max)
                 
                 right_y_range = None
                 if right_y_axis and right_y_axis != 'None':
-                    right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制", key="yoko_right_y")
+                    right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制", key=f"{key_prefix}right_y_range_enabled")
                     if right_y_range_enabled:
                         col1, col2 = st.sidebar.columns(2)
                         with col1:
-                            right_y_min = st.number_input("右Y軸最小值", value=0.0, key="yoko_right_y_min")
+                            right_y_min = st.number_input("右Y軸最小值", value=0.0, key=f"{key_prefix}right_y_min")
                         with col2:
-                            right_y_max = st.number_input("右Y軸最大值", value=100.0, key="yoko_right_y_max")
+                            right_y_max = st.number_input("右Y軸最大值", value=100.0, key=f"{key_prefix}right_y_max")
                         right_y_range = (right_y_min, right_y_max)
                 
                 st.markdown("### 📊 YOKOGAWA 自定義圖表")
@@ -1728,8 +1875,138 @@ class YokogawaRenderer:
         if not temp_stats.empty:
             st.dataframe(temp_stats, use_container_width=True, hide_index=True)
 
+class SummaryRenderer:
+    """Summary UI渲染器 - v10.3.8簡化版 (僅保留HTML帶表格框的數據呈現)"""
+    
+    def __init__(self, log_data_list: List[LogData]):
+        self.log_data_list = log_data_list
+        self.summary_gen = TemperatureSummaryGenerator()
+    
+    def render(self):
+        """渲染Summary標籤頁內容 - 簡化版"""
+        st.markdown("""
+        <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 1.5rem; border-radius: 10px; margin-bottom: 2rem; color: white;">
+            <h3>📋 溫度整合摘要報告</h3>
+            <p>🎯 整合所有檔案的溫度數據，按照標準格式顯示最高溫度</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # 生成摘要表格
+        summary_df = self.summary_gen.generate_summary_table(self.log_data_list)
+        
+        if summary_df.empty:
+            st.warning("⚠️ 沒有找到可用的溫度數據")
+            return
+        
+        # 顯示檔案來源信息
+        stats = self.summary_gen.get_summary_statistics(summary_df)
+        if 'log_types' in stats and stats['log_types']:
+            with st.expander("📂 檔案來源詳情", expanded=False):
+                unique_files = summary_df['Source File'].unique() if 'Source File' in summary_df.columns else []
+                for i, filename in enumerate(unique_files, 1):
+                    file_data = summary_df[summary_df['Source File'] == filename] if 'Source File' in summary_df.columns else pd.DataFrame()
+                    if not file_data.empty:
+                        log_type = file_data['Log Type'].iloc[0] if 'Log Type' in file_data.columns else 'Unknown'
+                        channel_count = len(file_data)
+                        
+                        # 添加類型emoji
+                        if "GPUMon" in log_type:
+                            emoji = "🎮"
+                        elif "PTAT" in log_type:
+                            emoji = "🖥️"
+                        elif "YOKOGAWA" in log_type:
+                            emoji = "📊"
+                        else:
+                            emoji = "📄"
+                        
+                        st.write(f"**{i}.** {emoji} `{filename}` ({log_type}) - {channel_count} 個監控點")
+        
+        # 顯示整合表格
+        st.markdown("### 📋 溫度監控點整合表格")
+        
+        # 格式化顯示表格
+        display_df = self.summary_gen.format_summary_table_for_display(summary_df)
+        
+        if not display_df.empty:
+            # 準備HTML表格
+            html_table = self._prepare_html_table(display_df)
+            
+            # HTML表格預覽（預設開啟）
+            with st.expander("🔍 HTML表格預覽（可直接複製）", expanded=True):
+                st.markdown("**以下是帶邊框的HTML表格，可直接選中複製：**")
+                st.markdown(html_table, unsafe_allow_html=True)
+                st.info("💡 提示：在上方表格上按住滑鼠左鍵拖拽選中整個表格，然後Ctrl+C複製，到Word中Ctrl+V貼上")
+        
+        else:
+            st.error("❌ 無法生成摘要表格")
+    
+    def _prepare_html_table(self, display_df: pd.DataFrame) -> str:
+        """準備帶邊框的HTML表格格式"""
+        if display_df.empty:
+            return ""
+        
+        # 創建HTML表格
+        html_parts = []
+        
+        # 添加CSS樣式
+        html_parts.append("""
+        <style>
+        .temp-table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 10px 0;
+            font-family: Arial, sans-serif;
+            font-size: 12px;
+        }
+        .temp-table th, .temp-table td {
+            border: 1px solid #333333;
+            padding: 8px;
+            text-align: center;
+            vertical-align: middle;
+        }
+        .temp-table th {
+            background-color: #f2f2f2;
+            font-weight: bold;
+            color: #333333;
+        }
+        .temp-table td {
+            background-color: #ffffff;
+        }
+        .temp-table tr:nth-child(even) td {
+            background-color: #f9f9f9;
+        }
+        </style>
+        """)
+        
+        # 開始表格
+        html_parts.append('<table class="temp-table">')
+        
+        # 表格標題行
+        html_parts.append('<thead>')
+        html_parts.append('<tr>')
+        for header in display_df.columns:
+            html_parts.append(f'<th>{header}</th>')
+        html_parts.append('</tr>')
+        html_parts.append('</thead>')
+        
+        # 表格數據行
+        html_parts.append('<tbody>')
+        for _, row in display_df.iterrows():
+            html_parts.append('<tr>')
+            for value in row:
+                # 處理空值
+                cell_value = str(value) if pd.notna(value) else ""
+                html_parts.append(f'<td>{cell_value}</td>')
+            html_parts.append('</tr>')
+        html_parts.append('</tbody>')
+        
+        # 結束表格
+        html_parts.append('</table>')
+        
+        return "\n".join(html_parts)
+
 # =============================================================================
-# 7. UI工廠 (UI Factory)
+# 8. UI工廠 (UI Factory)
 # =============================================================================
 
 class RendererFactory:
@@ -1750,7 +2027,7 @@ class RendererFactory:
             return None
 
 # =============================================================================
-# 8. 主應用程式 (Main Application) - 超簡潔版
+# 9. 主應用程式 (Main Application) - v10.3.8 多檔案獨立分析 + Summary整合版 (簡化版)
 # =============================================================================
 
 def display_version_info():
@@ -1759,31 +2036,25 @@ def display_version_info():
         st.markdown(f"""
         **當前版本：{VERSION}** | **發布日期：{VERSION_DATE}**
         
-        ### 🎨 v10.3.6 Ultra Clean Interface 更新內容：
-        - 🧹 **超簡潔界面** - 所有解析資訊完全隱藏在下拉選單中
-        - 📊 **主界面極簡** - 只顯示結果摘要，無冗餘信息
-        - 🔍 **詳細日誌可選** - 解析過程、調試信息等都在摺疊區域內
-        - ✨ **一鍵查看** - 需要時點擊展開即可查看完整解析過程
-        - 📈 **功能完整保留** - 所有分析功能一個不少，只是界面更乾淨
-        - 🎯 **用戶體驗優化** - 聚焦於結果展示，降低視覺干擾
+        ### ✨ 主要功能
         
-        ### 🔄 界面演進歷程：
-        - **v10.2**: 詳細日誌直接顯示 → 信息豐富但冗長
-        - **v10.3.5**: 簡潔界面版 → 部分摺疊，部分簡化
-        - **v10.3.6**: 超簡潔界面版 → **所有解析資訊完全隱藏**
+        - **🎮 GPUMon Log** - GPU性能監控數據解析與視覺化
+        - **🖥️ PTAT Log** - CPU性能監控數據解析與視覺化  
+        - **📊 YOKOGAWA Log** - 多通道溫度記錄儀數據解析與視覺化
+        - **📋 Summary整合** - 多檔案溫度數據整合，生成帶邊框HTML表格
+        - **📈 獨立分析** - 每個檔案都有專屬的圖表控制和統計分析
         
-        ### 💡 設計哲學：
-        - **結果導向** - 用戶主要關心解析結果，不是過程
-        - **可選詳情** - 需要調試時可隨時查看詳細信息
-        - **視覺舒適** - 減少信息過載，提升使用體驗
-        - **功能完整** - 不犧牲任何功能，只優化展示方式
+        ### 🎯 核心特色
         
-        ---
-        💡 **使用建議：** 正常使用時界面清爽，需要調試時點擊展開詳細日誌！
+        - **智能解析** - 自動識別不同類型的Log檔案格式
+        - **多檔案支援** - 同時處理多個檔案，獨立分析
+        - **帶邊框表格** - Summary頁面提供可直接複製到Word的HTML表格
+        - **即時互動** - 時間範圍和參數調整即時更新圖表數據
         """)
 
+
 def main():
-    """主程式 - v10.3.6 Ultra Clean Interface"""
+    """主程式 - v10.3.8 Multi-File Analysis with Summary (Simplified)"""
     st.set_page_config(
         page_title="溫度數據視覺化平台",
         page_icon="📊",
@@ -1832,6 +2103,17 @@ def main():
             border-radius: 0.25rem;
             border: 1px solid #dee2e6;
         }
+        .temp-summary-table {
+            font-size: 0.9em;
+        }
+        .temp-summary-table th {
+            background-color: #f0f2f6;
+            font-weight: bold;
+            text-align: center;
+        }
+        .temp-summary-table td {
+            text-align: center;
+        }
     </style>
     """, unsafe_allow_html=True)
     
@@ -1839,7 +2121,7 @@ def main():
     st.markdown(f"""
     <div class="main-header">
         <h1>📊 溫度數據視覺化平台</h1>
-        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 超簡潔界面</p>
+        <p>智能解析 YOKOGAWA、PTAT、GPUMon Log 文件 | 多檔案獨立分析 + Summary整合 (簡化版)</p>
         <p><strong>{VERSION}</strong> | {VERSION_DATE}</p>
     </div>
     """, unsafe_allow_html=True)
@@ -1860,7 +2142,7 @@ def main():
         "📁 上傳Log File (可多選)", 
         type=['csv', 'xlsx'], 
         accept_multiple_files=True,
-        help="v10.3.6 超簡潔界面 - 所有解析資訊自動隱藏"
+        help="v10.3.8 簡化版：多檔案獨立分析 + Summary整合，專注帶邊框表格複製"
     )
     
     # 顯示訪問計數器
@@ -1887,87 +2169,110 @@ def main():
             st.error("❌ 無法解析任何檔案")
             return
         
-        # 根據檔案數量和類型決定UI模式
+        # 根據檔案數量決定UI模式
         if len(log_data_list) == 1:
+            # 單檔案模式
             log_data = log_data_list[0]
             renderer = RendererFactory.create_renderer(log_data)
             
             if renderer:
-                renderer.render()
+                renderer.render(file_index=0)
             else:
                 st.error(f"不支援的Log類型: {log_data.metadata.log_type}")
         
         else:
-            st.info("📊 多檔案模式，使用基本分析功能")
+            # 多檔案模式 - 每個檔案獨立顯示 + Summary整合
+            st.success(f"📊 多檔案分析模式：成功解析 {len(log_data_list)} 個檔案")
             
-            # 多檔案合併邏輯
-            try:
-                combined_df = pd.concat([log_data.df for log_data in log_data_list], axis=1)
-                
-                combined_metadata = LogMetadata(
-                    filename="合併檔案",
-                    log_type="混合類型",
-                    rows=combined_df.shape[0],
-                    columns=combined_df.shape[1],
-                    time_range=f"{combined_df.index.min()} 到 {combined_df.index.max()}",
-                    file_size_kb=sum(log_data.metadata.file_size_kb for log_data in log_data_list)
-                )
-                
-                combined_log_data = LogData(combined_df, combined_metadata)
-                
-                st.success(f"📊 合併數據載入：{combined_log_data.metadata.rows} 行 × {combined_log_data.metadata.columns} 列")
-                
-                numeric_columns = combined_log_data.numeric_columns
-                if numeric_columns:
-                    st.sidebar.markdown("### ⚙️ 圖表設定")
-                    left_y_axis = st.sidebar.selectbox("📈 左側Y軸變數", options=numeric_columns, index=0)
-                    right_y_axis_options = ['None'] + numeric_columns
-                    right_y_axis = st.sidebar.selectbox("📊 右側Y軸變數 (可選)", options=right_y_axis_options, index=0)
-                    
-                    time_min, time_max = combined_log_data.get_time_range()
-                    x_range = st.sidebar.slider("選擇時間範圍 (秒)", min_value=time_min, max_value=time_max, value=(time_min, time_max), step=1.0)
-                    
-                    # Y軸範圍控制
-                    st.sidebar.markdown("#### 📏 Y軸範圍設定")
-                    
-                    # 左側Y軸範圍設定
-                    left_y_range_enabled = st.sidebar.checkbox("🔵 啟用左側Y軸範圍限制", key="combined_left_y")
-                    left_y_range = None
-                    if left_y_range_enabled:
-                        col1, col2 = st.sidebar.columns(2)
-                        with col1:
-                            left_y_min = st.number_input("左Y軸最小值", value=0.0, key="combined_left_y_min")
-                        with col2:
-                            left_y_max = st.number_input("左Y軸最大值", value=100.0, key="combined_left_y_max")
-                        left_y_range = (left_y_min, left_y_max)
-                    
-                    # 右側Y軸範圍設定
-                    right_y_range = None
-                    if right_y_axis and right_y_axis != 'None':
-                        right_y_range_enabled = st.sidebar.checkbox("🔴 啟用右側Y軸範圍限制", key="combined_right_y")
-                        if right_y_range_enabled:
-                            col1, col2 = st.sidebar.columns(2)
-                            with col1:
-                                right_y_min = st.number_input("右Y軸最小值", value=0.0, key="combined_right_y_min")
-                            with col2:
-                                right_y_max = st.number_input("右Y軸最大值", value=100.0, key="combined_right_y_max")
-                            right_y_range = (right_y_min, right_y_max)
-                    
-                    st.markdown("### 📊 綜合數據圖表")
-                    chart_gen = ChartGenerator()
-                    chart = chart_gen.generate_flexible_chart(combined_log_data, left_y_axis, right_y_axis, x_range, left_y_range, right_y_range)
-                    if chart:
-                        st.pyplot(chart)
-                    
-                    # 顯示基本統計數據
-                    st.markdown("### 📈 基本統計數據")
-                    stats_calc = StatisticsCalculator()
-                    temp_stats = stats_calc.calculate_temp_stats(combined_log_data, x_range)
-                    if not temp_stats.empty:
-                        st.dataframe(temp_stats, use_container_width=True, hide_index=True)
+            # 創建標籤頁，每個檔案一個標籤 + Summary標籤
+            tab_names = []
             
-            except Exception as e:
-                st.error(f"合併數據時出錯: {e}")
+            # 首先添加Summary標籤
+            tab_names.append("📋 Summary")
+            
+            # 然後添加各個檔案的標籤
+            for i, log_data in enumerate(log_data_list):
+                # 生成標籤名稱
+                filename = log_data.metadata.filename
+                log_type = log_data.metadata.log_type
+                
+                # 縮短檔案名稱以適應標籤顯示
+                short_name = filename
+                if len(filename) > 15:
+                    name_parts = filename.split('.')
+                    if len(name_parts) > 1:
+                        short_name = name_parts[0][:12] + "..." + name_parts[-1]
+                    else:
+                        short_name = filename[:12] + "..."
+                
+                # 添加類型emoji
+                if "GPUMon" in log_type:
+                    tab_name = f"🎮 {short_name}"
+                elif "PTAT" in log_type:
+                    tab_name = f"🖥️ {short_name}"
+                elif "YOKOGAWA" in log_type:
+                    tab_name = f"📊 {short_name}"
+                else:
+                    tab_name = f"📄 {short_name}"
+                
+                tab_names.append(tab_name)
+            
+            # 創建標籤頁
+            tabs = st.tabs(tab_names)
+            
+            # 首先渲染Summary標籤頁
+            with tabs[0]:
+                summary_renderer = SummaryRenderer(log_data_list)
+                summary_renderer.render()
+            
+            # 然後為每個檔案渲染獨立的內容
+            for i, (tab, log_data) in enumerate(zip(tabs[1:], log_data_list)):
+                with tab:
+                    # 顯示檔案資訊
+                    st.markdown(f"""
+                    <div style="background-color: #f0f8ff; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; border-left: 4px solid #1f77b4;">
+                        <h4>📁 檔案資訊</h4>
+                        <p><strong>檔案名稱：</strong> {log_data.metadata.filename}</p>
+                        <p><strong>檔案類型：</strong> {log_data.metadata.log_type}</p>
+                        <p><strong>數據規模：</strong> {log_data.metadata.rows} 行 × {log_data.metadata.columns} 列</p>
+                        <p><strong>檔案大小：</strong> {log_data.metadata.file_size_kb:.1f} KB</p>
+                        <p><strong>時間範圍：</strong> {log_data.metadata.time_range}</p>
+                    </div>
+                    """, unsafe_allow_html=True)
+                    
+                    # 為每個檔案創建獨立的渲染器
+                    renderer = RendererFactory.create_renderer(log_data)
+                    
+                    if renderer:
+                        # 渲染該檔案的完整UI，傳遞正確的file_index
+                        renderer.render(file_index=i)
+                        
+                    else:
+                        st.error(f"不支援的Log類型: {log_data.metadata.log_type}")
+                        
+                        # 顯示基本信息作為備用
+                        st.markdown("### 📊 基本數據預覽")
+                        if not log_data.df.empty:
+                            st.write("**欄位列表：**")
+                            for col in log_data.df.columns:
+                                st.write(f"- {col}")
+                            
+                            st.write("**數據樣本（前5行）：**")
+                            st.dataframe(log_data.df.head(), use_container_width=True)
+            
+            # 在標籤頁外提供檔案選擇器（用於側邊欄控制）
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("### 🎛️ 多檔案控制")
+            
+            selected_file_index = st.sidebar.selectbox(
+                "選擇要控制的檔案",
+                options=range(len(log_data_list)),
+                format_func=lambda x: f"{log_data_list[x].metadata.filename} ({log_data_list[x].metadata.log_type})",
+                help="選擇要在側邊欄中控制的檔案"
+            )
+            
+            st.sidebar.info(f"💡 當前選擇：{log_data_list[selected_file_index].metadata.filename}")
+            # 注意：這個選擇器主要用於顯示信息，實際的控制是在各個tab中獨立進行的
     
     else:
         st.info("🚀 **開始使用** - 請在左側上傳您的 Log 文件進行分析")
@@ -1977,54 +2282,25 @@ def main():
         
         - **🎮 GPUMon CSV** - GPU性能監控數據（溫度、功耗、頻率、使用率）
         - **🖥️ PTAT CSV** - CPU性能監控數據（頻率、功耗、溫度）
-        - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據（完整/部分檔案）
+        - **📊 YOKOGAWA Excel/CSV** - 多通道溫度記錄儀數據
         
-        ### ✨ v10.3.6 Ultra Clean Interface 特色
+        ### ✨ 主要功能
         
-        - **🧹 極簡界面** - 所有解析資訊完全隱藏，主界面只顯示結果
-        - **🔍 詳細日誌可選** - 需要時點擊「詳細解析日誌」查看完整過程
-        - **📊 智能解析** - 保留完整的動態關鍵字搜索和智能重命名功能
-        - **🎯 結果導向** - 聚焦於分析結果，減少視覺干擾
-        - **📈 功能完整** - 所有分析功能一個不少，只是展示更優雅
+        - **📋 智能解析** - 自動識別不同類型的Log檔案格式
+        - **🎯 多檔案分析** - 同時上傳多個檔案，每個檔案獨立分析
+        - **📊 即時互動** - 時間範圍和參數調整即時更新圖表
+        - **📋 Summary整合** - 所有溫度數據整合成帶邊框HTML表格
+        - **💾 一鍵複製** - HTML表格可直接複製到Word保留格式
         
-        ### 🔍 動態關鍵字搜索技術
+        ### 🎯 使用流程
         
-        - **🔍 三階段搜索** - 關鍵字 → 結構 → 預設值逐層搜索
-        - **🏷️ 智能標籤識別** - 自動識別用戶標籤（CPU_Tc, U5, U19等）
-        - **📊 完整/部分檔案支援** - 完整檔案享受智能重命名，部分檔案亦可解析
-        - **🌐 多語言關鍵詞** - 支援中英文時間相關關鍵詞
-        - **🛡️ 關鍵欄位保護** - Date、Time等重要欄位永不被重命名
-        
-        ### 💡 使用建議
-        
-        #### 📁 **YOKOGAWA 檔案最佳實踐**
-        
-        **🥇 推薦：完整檔案**
-        ```
-        ✅ 包含完整的檔案結構
-        ✅ 自動識別CH和Tag行
-        ✅ 智能欄位重命名
-        ✅ 最佳解析效果
-        ```
-        
-        **🥈 可用：部分檔案**
-        ```
-        ✅ 僅包含數據和時間欄位
-        ✅ 基本圖表功能正常
-        ⚠️ 無法進行欄位重命名
-        💡 仍可進行數據分析
-        ```
-        
-        ### 🎨 界面設計理念
-        
-        - **極簡主義** - 去除一切不必要的視覺元素
-        - **用戶友好** - 新手看到簡潔界面，專家可查看詳細日誌
-        - **信息分層** - 重要信息突出，詳細信息隱藏但可訪問
-        - **視覺舒適** - 減少信息過載，提升使用體驗
-        
-        ---
-        💡 **v10.3.6 核心優勢：** 保持完整功能的同時，提供最清爽的用戶界面！
+        1. **上傳檔案** - 在左側選擇一個或多個Log檔案
+        2. **查看分析** - 每個檔案都有專屬的標籤頁和圖表控制
+        3. **整合報告** - 在Summary標籤頁查看所有溫度數據整合表格
+        4. **複製使用** - 直接複製HTML表格到Word或Excel
         """)
+
 
 if __name__ == "__main__":
     main()
+
