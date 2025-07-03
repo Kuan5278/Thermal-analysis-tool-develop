@@ -1,4 +1,4 @@
-# thermal_analysis_platform_v10.3.9_integrated.py
+# analysis_tool_V1.0.py
 # 溫度數據視覺化平台 - v10.3.9 (新增System Log格式解析 + 指定佈局呈現 + 支援txt)
 
 import streamlit as st
